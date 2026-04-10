@@ -1,0 +1,9 @@
+{
+  "program": "zkpoll_vote2.aleo",
+  "version": "0.1.0",
+  "description": "Private-ballot ranked voting \u2014 r1-r8 are ZK private witnesses, never in calldata.",
+  "license": "MIT",
+  "leo": "4.0.0",
+  "dependencies": null,
+  "dev_dependencies": null
+}

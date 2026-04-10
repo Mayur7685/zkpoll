@@ -1,0 +1,9 @@
+{
+  "program": "zkpoll_credential.aleo",
+  "version": "0.1.0",
+  "description": "Credential with voting_weight (EV) \u2014 MetaPoll-style eligible votes model.",
+  "license": "MIT",
+  "leo": "4.0.0",
+  "dependencies": null,
+  "dev_dependencies": null
+}
