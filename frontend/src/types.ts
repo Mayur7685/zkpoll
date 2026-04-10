@@ -10,6 +10,8 @@ export type RequirementType =
   | 'X_FOLLOW'
   | 'DISCORD_MEMBER'
   | 'DISCORD_ROLE'
+  | 'GITHUB_ACCOUNT'
+  | 'TELEGRAM_MEMBER'
 
 export interface Requirement {
   id: string
@@ -24,6 +26,10 @@ export interface Requirement {
     handle?: string
     serverId?: string
     roleId?: string
+    chatId?: string          // Telegram chat/channel ID for TELEGRAM_MEMBER
+    minRepos?: number        // GITHUB_ACCOUNT: minimum public repos
+    minFollowers?: number    // GITHUB_ACCOUNT: minimum followers
+    orgName?: string         // GITHUB_ACCOUNT: must be member of GitHub org
     /** Eligible votes this requirement contributes when passed. Default varies by type. */
     vote_weight?: number
   }
@@ -66,7 +72,7 @@ export interface CommunityConfig {
 
 // ─── Connected accounts ───────────────────────────────────────────────────────
 
-export type AccountType = 'EVM_WALLET' | 'X_TWITTER' | 'DISCORD'
+export type AccountType = 'EVM_WALLET' | 'X_TWITTER' | 'DISCORD' | 'GITHUB' | 'TELEGRAM'
 
 export interface ConnectedAccount {
   type: AccountType

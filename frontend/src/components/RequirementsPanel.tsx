@@ -204,9 +204,16 @@ export default function RequirementsPanel({
                       )}
                     </div>
                     {result && (
-                      <span className={`text-xs font-semibold ${result.passed ? 'text-[#10B981]' : 'text-red-500'}`}>
-                        {result.passed ? '✓ PASS' : '✕ FAIL'}
-                      </span>
+                      <div className="flex flex-col items-end gap-0.5 min-w-0 max-w-[55%]">
+                        <span className={`text-xs font-semibold shrink-0 ${result.passed ? 'text-[#10B981]' : 'text-red-500'}`}>
+                          {result.passed ? '✓ PASS' : '✕ FAIL'}
+                        </span>
+                        {result.error && (
+                          <span className="text-[10px] text-red-400 text-right leading-tight">
+                            {result.error}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                 )

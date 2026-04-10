@@ -11,6 +11,8 @@ const DEFAULT_WEIGHTS: Record<string, number> = {
   X_FOLLOW:         2,
   DISCORD_MEMBER:   5,
   DISCORD_ROLE:     5,
+  GITHUB_ACCOUNT:   3,
+  TELEGRAM_MEMBER:  3,
 }
 
 /**
@@ -32,8 +34,10 @@ export function calculateVotingWeight(
 import { checkTokenBalance } from "./checkers/token_balance.js"
 import { checkNFTOwnership } from "./checkers/nft_ownership.js"
 import { checkOnchainActivity } from "./checkers/onchain_activity.js"
-import { checkXFollow, checkDiscordMember, checkDiscordRole } from "./checkers/social_follow.js"
+import { checkXFollow, checkDiscordMember, checkDiscordRole, checkTelegramMember } from "./checkers/social_follow.js"
+import { checkGitHubAccount } from "./checkers/github.js"
 import { checkDomainOwnership } from "./checkers/domain_ownership.js"
+import { getUserToken, getUserMeta } from "./oauth.js"
 
 function getRpcUrl(chain: string): string {
   const urls: Record<string, string> = {
@@ -49,9 +53,11 @@ async function checkSingle(
   req: RequirementGroup["requirements"][0],
   accounts: ConnectedAccount[],
 ): Promise<{ passed: boolean; error?: string }> {
-  const evm     = accounts.find(a => a.type === "EVM_WALLET")?.identifier ?? ""
-  const xAcct   = accounts.find(a => a.type === "X_TWITTER")?.identifier ?? ""
-  const discord = accounts.find(a => a.type === "DISCORD")?.identifier ?? ""
+  const evm      = accounts.find(a => a.type === "EVM_WALLET")?.identifier ?? ""
+  const xAcct    = accounts.find(a => a.type === "X_TWITTER")?.identifier ?? ""
+  const discord  = accounts.find(a => a.type === "DISCORD")?.identifier ?? ""
+  const github   = accounts.find(a => a.type === "GITHUB")?.identifier ?? ""
+  const telegram = accounts.find(a => a.type === "TELEGRAM")?.identifier ?? ""
 
   switch (req.type) {
     case "FREE":
@@ -86,14 +92,24 @@ async function checkSingle(
         passed: await checkDomainOwnership(evm, req.params.domain!, getRpcUrl(req.chain!)),
       }
 
-    case "X_FOLLOW":
+    case "X_FOLLOW": {
+      // Resolve the authenticated user's Twitter username from the token store
+      const meta     = getUserMeta('twitter', xAcct)
+      const username = meta?.username ?? xAcct  // fallback to whatever identifier was stored
+      console.debug(`[evaluator] X_FOLLOW xAcct="${xAcct}" username="${username}" handle="${req.params.handle}"`)
       return {
-        passed: await checkXFollow(xAcct, req.params.handle!, process.env.TWITTER_BEARER_TOKEN!),
+        passed: await checkXFollow(username, req.params.handle!),
       }
+    }
 
     case "DISCORD_MEMBER":
       return {
-        passed: await checkDiscordMember(discord, req.params.serverId!, process.env.DISCORD_BOT_TOKEN!),
+        passed: await checkDiscordMember(
+          discord,
+          req.params.serverId!,
+          process.env.DISCORD_BOT_TOKEN!,
+          getUserToken('discord', discord), // user-context token (no bot-in-server needed)
+        ),
       }
 
     case "DISCORD_ROLE":
@@ -101,6 +117,20 @@ async function checkSingle(
         passed: await checkDiscordRole(
           discord, req.params.serverId!, req.params.roleId!, process.env.DISCORD_BOT_TOKEN!,
         ),
+      }
+
+    case "GITHUB_ACCOUNT":
+      return {
+        passed: await checkGitHubAccount(github, {
+          minRepos:     req.params.minRepos,
+          minFollowers: req.params.minFollowers,
+          orgName:      req.params.orgName,
+        }),
+      }
+
+    case "TELEGRAM_MEMBER":
+      return {
+        passed: await checkTelegramMember(telegram, req.params.chatId!, process.env.TELEGRAM_BOT_TOKEN!),
       }
 
     default:

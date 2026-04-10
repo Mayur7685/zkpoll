@@ -8,6 +8,7 @@ export type RequirementType =
   | "DISCORD_MEMBER"
   | "DISCORD_ROLE"
   | "GITHUB_ACCOUNT"
+  | "TELEGRAM_MEMBER"
   | "ALLOWLIST"
   | "FREE"
 
@@ -24,9 +25,13 @@ export interface Requirement {
     handle?: string
     serverId?: string
     roleId?: string
+    chatId?: string          // Telegram chat/channel ID for TELEGRAM_MEMBER
     domain?: string
     addresses?: string[]
-    vote_weight?: number   // per-requirement EV override; falls back to DEFAULT_WEIGHTS
+    minRepos?: number        // GITHUB_ACCOUNT: minimum public repos
+    minFollowers?: number    // GITHUB_ACCOUNT: minimum followers
+    orgName?: string         // GITHUB_ACCOUNT: must be member of GitHub org
+    vote_weight?: number     // per-requirement EV override; falls back to DEFAULT_WEIGHTS
   }
 }
 
@@ -69,6 +74,7 @@ export type ConnectorType =
   | "DISCORD"
   | "X_TWITTER"
   | "GITHUB"
+  | "TELEGRAM"
 
 export interface ConnectedAccount {
   type: ConnectorType
