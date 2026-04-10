@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useAleoWallet } from '../hooks/useAleoWallet'
 import { listCommunities } from '../lib/verifier'
@@ -135,7 +135,14 @@ export default function CredentialsHub() {
 
   const [communities, setCommunities]         = useState<CommunityConfig[]>([])
   const [credentials, setCredentials]         = useState<Credential[]>([])
-  const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccount[]>([])
+  const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccount[]>(() => {
+    try { return JSON.parse(localStorage.getItem('zkpoll:accounts') ?? '[]') } catch { return [] }
+  })
+
+  const handleAccountsChange = useCallback((accounts: ConnectedAccount[]) => {
+    setConnectedAccounts(accounts)
+    localStorage.setItem('zkpoll:accounts', JSON.stringify(accounts))
+  }, [])
   const [loading, setLoading]                 = useState(true)
   const [credsLoading, setCredsLoading]       = useState(false)
 
@@ -214,7 +221,7 @@ export default function CredentialsHub() {
           <span className="text-xs text-gray-400">For requirement checks</span>
         </div>
         <div className="bg-white border border-gray-100 rounded-2xl p-4">
-          <ConnectorSelector accounts={connectedAccounts} onChange={setConnectedAccounts} />
+          <ConnectorSelector accounts={connectedAccounts} onChange={handleAccountsChange} />
         </div>
       </div>
 
@@ -259,7 +266,7 @@ export default function CredentialsHub() {
                 community={community}
                 credentials={credentials}
                 connectedAccounts={connectedAccounts}
-                onAccountsChange={setConnectedAccounts}
+                onAccountsChange={handleAccountsChange}
                 aleoAddress={aleoAddress}
                 connected={connected}
                 executeTransaction={executeTransaction}

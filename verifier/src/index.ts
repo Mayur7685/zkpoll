@@ -167,7 +167,7 @@ app.get("/auth/github", (_req, res) => {
   const params = new URLSearchParams({
     client_id:    clientId,
     redirect_uri: `${APP_URL}/api/auth/github/callback`,
-    scope:        "read:user",
+    scope:        "read:user user:email",
     state,
   })
   res.redirect(`https://github.com/login/oauth/authorize?${params}`)
@@ -190,7 +190,9 @@ app.get("/auth/github/callback", async (req: Request, res: Response) => {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/vnd.github+json" },
     })
     const { login, id } = meRes.data as { login: string; id: number }
-    res.send(popupSuccess("zkpoll-github", { userId: String(id), username: login }))
+    // Key by login (username) so public API calls like GET /users/{username} work
+    storeUserToken('github', login, accessToken, 60 * 60 * 24 * 30, login)
+    res.send(popupSuccess("zkpoll-github", { userId: login, username: login }))
   } catch (e: any) {
     console.error("[oauth/github]", e?.response?.data ?? e.message)
     res.send(popupError("zkpoll-github", e?.message ?? "GitHub OAuth failed"))

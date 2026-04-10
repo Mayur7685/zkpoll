@@ -1,7 +1,7 @@
 // Multi-step wizard: community details → requirements → review & create.
 // Design: ref3 — white card, stepper circles, blue border content, bottom nav.
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createCommunity } from '../lib/verifier'
 import type { CommunityConfig, RequirementGroup, Requirement, RequirementType } from '../types'
@@ -16,6 +16,8 @@ const REQ_TYPES: { value: RequirementType; label: string; needsChain?: boolean }
   { value: 'X_FOLLOW',         label: 'X / Twitter Follow' },
   { value: 'DISCORD_MEMBER',   label: 'Discord Member' },
   { value: 'DISCORD_ROLE',     label: 'Discord Role' },
+  { value: 'GITHUB_ACCOUNT',   label: 'GitHub Account' },
+  { value: 'TELEGRAM_MEMBER',  label: 'Telegram Member' },
 ]
 
 const CHAINS = ['ethereum', 'base', 'optimism', 'arbitrum']
@@ -78,6 +80,25 @@ function DetailsStep({ value, onChange }: { value: DetailsForm; onChange: (v: De
   )
 }
 
+// ── Field wrapper with Required / Optional badge ──────────────────────────────
+
+function Field({ label, optional = false, children }: {
+  label: string; optional?: boolean; children: ReactNode
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">{label}</span>
+        {optional
+          ? <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">Optional</span>
+          : <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">Required</span>
+        }
+      </div>
+      {children}
+    </div>
+  )
+}
+
 // ── Step 2: Requirements builder ──────────────────────────────────────────────
 
 function RequirementEditor({ req, onChange, onRemove }: {
@@ -107,40 +128,106 @@ function RequirementEditor({ req, onChange, onRemove }: {
       </div>
       {req.type === 'TOKEN_BALANCE' && (
         <div className="space-y-2">
-          <input className={inputCls} placeholder="Token contract (0x…)" value={req.params.tokenAddress ?? ''}
-            onChange={e => setParam('tokenAddress', e.target.value)} />
-          <input className={inputCls} placeholder="Min amount (wei)" value={req.params.minAmount ?? ''}
-            onChange={e => setParam('minAmount', e.target.value)} />
+          <Field label="Token contract address">
+            <input className={inputCls} placeholder="0x…" value={req.params.tokenAddress ?? ''}
+              onChange={e => setParam('tokenAddress', e.target.value)} />
+          </Field>
+          <Field label="Minimum amount">
+            <input className={inputCls} placeholder="e.g. 100 for 100 USDC" value={req.params.minAmount ?? ''}
+              onChange={e => setParam('minAmount', e.target.value)} />
+          </Field>
         </div>
       )}
       {req.type === 'NFT_OWNERSHIP' && (
-        <input className={inputCls} placeholder="NFT contract (0x…)" value={req.params.contractAddress ?? ''}
-          onChange={e => setParam('contractAddress', e.target.value)} />
+        <Field label="NFT contract address">
+          <input className={inputCls} placeholder="0x…" value={req.params.contractAddress ?? ''}
+            onChange={e => setParam('contractAddress', e.target.value)} />
+        </Field>
       )}
       {req.type === 'DOMAIN_OWNERSHIP' && (
-        <input className={inputCls} placeholder="Domain (e.g. vitalik.eth)" value={req.params.domain ?? ''}
-          onChange={e => setParam('domain', e.target.value)} />
+        <Field label="Domain">
+          <input className={inputCls} placeholder="e.g. vitalik.eth" value={req.params.domain ?? ''}
+            onChange={e => setParam('domain', e.target.value)} />
+        </Field>
       )}
       {req.type === 'ALLOWLIST' && (
-        <textarea className={`${inputCls} resize-none`} rows={2} placeholder="Comma-separated EVM addresses"
-          value={(req.params.addresses ?? []).join(', ')}
-          onChange={e => onChange({ ...req, params: {
-            addresses: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-          } })} />
+        <Field label="Allowed addresses">
+          <textarea className={`${inputCls} resize-none`} rows={2} placeholder="Comma-separated EVM addresses"
+            value={(req.params.addresses ?? []).join(', ')}
+            onChange={e => onChange({ ...req, params: {
+              addresses: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+            } })} />
+        </Field>
       )}
       {req.type === 'X_FOLLOW' && (
-        <input className={inputCls} placeholder="Twitter handle (e.g. @provablehq)" value={req.params.handle ?? ''}
-          onChange={e => setParam('handle', e.target.value)} />
+        <Field label="Twitter handle to follow">
+          <input className={inputCls} placeholder="e.g. @provablehq" value={req.params.handle ?? ''}
+            onChange={e => setParam('handle', e.target.value)} />
+        </Field>
       )}
       {(req.type === 'DISCORD_MEMBER' || req.type === 'DISCORD_ROLE') && (
         <div className="space-y-2">
-          <input className={inputCls} placeholder="Discord Server ID" value={req.params.serverId ?? ''}
-            onChange={e => setParam('serverId', e.target.value)} />
+          <Field label="Discord Server ID">
+            <input className={inputCls} placeholder="e.g. 123456789012345678" value={req.params.serverId ?? ''}
+              onChange={e => setParam('serverId', e.target.value)} />
+          </Field>
           {req.type === 'DISCORD_ROLE' && (
-            <input className={inputCls} placeholder="Role ID" value={req.params.roleId ?? ''}
-              onChange={e => setParam('roleId', e.target.value)} />
+            <Field label="Role ID">
+              <input className={inputCls} placeholder="e.g. 987654321098765432" value={req.params.roleId ?? ''}
+                onChange={e => setParam('roleId', e.target.value)} />
+            </Field>
           )}
         </div>
+      )}
+      {req.type === 'ONCHAIN_ACTIVITY' && (
+        <Field label="Minimum transactions" optional>
+          <input className={inputCls} type="number" min={1} placeholder="e.g. 5 (default 1)"
+            value={req.params.minTxCount ?? ''}
+            onChange={e => onChange({ ...req, params: { ...req.params, minTxCount: e.target.value ? Number(e.target.value) : undefined } })} />
+        </Field>
+      )}
+      {req.type === 'GITHUB_ACCOUNT' && (
+        <div className="space-y-2">
+          <Field label="Min public repos" optional>
+            <input className={inputCls} type="number" min={0} placeholder="e.g. 5"
+              value={req.params.minRepos ?? ''}
+              onChange={e => onChange({ ...req, params: { ...req.params, minRepos: e.target.value ? Number(e.target.value) : undefined } })} />
+          </Field>
+          <Field label="Min followers" optional>
+            <input className={inputCls} type="number" min={0} placeholder="e.g. 10"
+              value={req.params.minFollowers ?? ''}
+              onChange={e => onChange({ ...req, params: { ...req.params, minFollowers: e.target.value ? Number(e.target.value) : undefined } })} />
+          </Field>
+          <Field label="Must be member of org" optional>
+            <input className={inputCls} placeholder="e.g. provablehq"
+              value={req.params.orgName ?? ''}
+              onChange={e => setParam('orgName', e.target.value)} />
+          </Field>
+          <Field label="Must have committed to repo" optional>
+            <input className={inputCls} placeholder="e.g. provablehq/leo"
+              value={req.params.commitsRepo ?? ''}
+              onChange={e => setParam('commitsRepo', e.target.value)} />
+          </Field>
+          {req.params.commitsRepo && (
+            <Field label="Min commits in that repo" optional>
+              <input className={inputCls} type="number" min={1} placeholder="e.g. 3 (default 1)"
+                value={req.params.minCommits ?? ''}
+                onChange={e => onChange({ ...req, params: { ...req.params, minCommits: e.target.value ? Number(e.target.value) : undefined } })} />
+            </Field>
+          )}
+          <Field label="Must have starred repo" optional>
+            <input className={inputCls} placeholder="e.g. provablehq/leo"
+              value={req.params.starredRepo ?? ''}
+              onChange={e => setParam('starredRepo', e.target.value)} />
+          </Field>
+        </div>
+      )}
+      {req.type === 'TELEGRAM_MEMBER' && (
+        <Field label="Telegram chat / channel ID">
+          <input className={inputCls} placeholder="e.g. -1001234567890"
+            value={req.params.chatId ?? ''}
+            onChange={e => setParam('chatId', e.target.value)} />
+        </Field>
       )}
     </div>
   )

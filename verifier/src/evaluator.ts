@@ -84,7 +84,12 @@ async function checkSingle(
 
     case "ONCHAIN_ACTIVITY":
       return {
-        passed: await checkOnchainActivity(evm, process.env.ALCHEMY_API_KEY!, req.chain!),
+        passed: await checkOnchainActivity(
+          evm,
+          process.env.ALCHEMY_API_KEY!,
+          req.chain!,
+          req.params.minTxCount ?? 1,
+        ),
       }
 
     case "DOMAIN_OWNERSHIP":
@@ -119,14 +124,23 @@ async function checkSingle(
         ),
       }
 
-    case "GITHUB_ACCOUNT":
+    case "GITHUB_ACCOUNT": {
+      const githubToken = getUserToken('github', github)
       return {
-        passed: await checkGitHubAccount(github, {
-          minRepos:     req.params.minRepos,
-          minFollowers: req.params.minFollowers,
-          orgName:      req.params.orgName,
-        }),
+        passed: await checkGitHubAccount(
+          github,
+          {
+            minRepos:     req.params.minRepos,
+            minFollowers: req.params.minFollowers,
+            orgName:      req.params.orgName,
+            commitsRepo:  req.params.commitsRepo,
+            minCommits:   req.params.minCommits,
+            starredRepo:  req.params.starredRepo,
+          },
+          githubToken,
+        ),
       }
+    }
 
     case "TELEGRAM_MEMBER":
       return {

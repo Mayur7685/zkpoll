@@ -8,7 +8,7 @@
 //   4. Get credential / Recast actions
 //   5. Credential expiry info
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useWallet } from '@provablehq/aleo-wallet-adaptor-react'
 import { useCredentialHub } from '../hooks/useCredentialHub'
 import { useAleoWallet } from '../hooks/useAleoWallet'
@@ -133,10 +133,19 @@ export default function CredentialHub({ community }: Props) {
   const needsEVM     = allReqs.some(r => ['TOKEN_BALANCE','NFT_OWNERSHIP','ONCHAIN_ACTIVITY','DOMAIN_OWNERSHIP','ALLOWLIST'].includes(r.type))
   const needsTwitter = allReqs.some(r => r.type === 'X_FOLLOW')
   const needsDiscord = allReqs.some(r => ['DISCORD_MEMBER','DISCORD_ROLE'].includes(r.type))
-  const needsConnectors = needsEVM || needsTwitter || needsDiscord
+  const needsGitHub  = allReqs.some(r => r.type === 'GITHUB_ACCOUNT')
+  const needsTelegram = allReqs.some(r => r.type === 'TELEGRAM_MEMBER')
+  const needsConnectors = needsEVM || needsTwitter || needsDiscord || needsGitHub || needsTelegram
 
   // Issuance flow state
-  const [accounts, setAccounts]   = useState<ConnectedAccount[]>([])
+  const [accounts, setAccounts]   = useState<ConnectedAccount[]>(() => {
+    try { return JSON.parse(localStorage.getItem('zkpoll:accounts') ?? '[]') } catch { return [] }
+  })
+
+  // Persist accounts across page refreshes / navigation
+  useEffect(() => {
+    localStorage.setItem('zkpoll:accounts', JSON.stringify(accounts))
+  }, [accounts])
   const [results, setResults]     = useState<CheckResult[] | null>(null)
   const [issuing, setIssuing]     = useState(false)
   const [issueStatus, setIssueStatus] = useState<'idle' | 'issuing' | 'confirming' | 'done' | 'error'>('idle')

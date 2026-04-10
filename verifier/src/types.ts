@@ -28,9 +28,13 @@ export interface Requirement {
     chatId?: string          // Telegram chat/channel ID for TELEGRAM_MEMBER
     domain?: string
     addresses?: string[]
+    minTxCount?: number      // ONCHAIN_ACTIVITY: minimum transaction count (default 1)
     minRepos?: number        // GITHUB_ACCOUNT: minimum public repos
     minFollowers?: number    // GITHUB_ACCOUNT: minimum followers
     orgName?: string         // GITHUB_ACCOUNT: must be member of GitHub org
+    commitsRepo?: string     // GITHUB_ACCOUNT: "owner/repo" — must have committed here
+    minCommits?: number      // GITHUB_ACCOUNT: minimum commits to commitsRepo (default 1)
+    starredRepo?: string     // GITHUB_ACCOUNT: "owner/repo" — user must have starred this
     vote_weight?: number     // per-requirement EV override; falls back to DEFAULT_WEIGHTS
   }
 }

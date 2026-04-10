@@ -27,6 +27,8 @@ const REQ_LABELS: Record<string, string> = {
   X_FOLLOW:         'X / Twitter Follow',
   DISCORD_MEMBER:   'Discord Member',
   DISCORD_ROLE:     'Discord Role',
+  GITHUB_ACCOUNT:   'GitHub Account',
+  TELEGRAM_MEMBER:  'Telegram Member',
 }
 
 const FIELD_MODULUS = 8444461749428370424248824938781546531375899335154063827935233455917409239041n
@@ -58,10 +60,12 @@ export default function RequirementsPanel({
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const allReqs      = groups.flatMap(g => g.requirements)
-  const needsEVM     = allReqs.some(r => ['TOKEN_BALANCE','NFT_OWNERSHIP','ONCHAIN_ACTIVITY','DOMAIN_OWNERSHIP','ALLOWLIST'].includes(r.type))
-  const needsTwitter = allReqs.some(r => r.type === 'X_FOLLOW')
-  const needsDiscord = allReqs.some(r => ['DISCORD_MEMBER','DISCORD_ROLE'].includes(r.type))
-  const needsConnectors = needsEVM || needsTwitter || needsDiscord
+  const needsEVM      = allReqs.some(r => ['TOKEN_BALANCE','NFT_OWNERSHIP','ONCHAIN_ACTIVITY','DOMAIN_OWNERSHIP','ALLOWLIST'].includes(r.type))
+  const needsTwitter  = allReqs.some(r => r.type === 'X_FOLLOW')
+  const needsDiscord  = allReqs.some(r => ['DISCORD_MEMBER','DISCORD_ROLE'].includes(r.type))
+  const needsGitHub   = allReqs.some(r => r.type === 'GITHUB_ACCOUNT')
+  const needsTelegram = allReqs.some(r => r.type === 'TELEGRAM_MEMBER')
+  const needsConnectors = needsEVM || needsTwitter || needsDiscord || needsGitHub || needsTelegram
   const isFreeOnly = allReqs.every(r => r.type === 'FREE')
   const passed = status === 'done' || status === 'issuing'
 
