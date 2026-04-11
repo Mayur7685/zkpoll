@@ -2,7 +2,7 @@
 
 import type { CommunityConfig, ConnectedAccount, VerifyResponse, CredentialParamsResponse, PollInfo } from '../types'
 
-const BASE = '/api'   // proxied to localhost:3001 in dev; set VITE_VERIFIER_URL for prod
+const BASE = (import.meta.env.VITE_VERIFIER_URL ?? '') + '/api'
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`)
