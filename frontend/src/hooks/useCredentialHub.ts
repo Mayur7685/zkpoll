@@ -55,7 +55,7 @@ export interface CredentialHubState {
 
 export function useCredentialHub(community: CommunityConfig): CredentialHubState {
   const { requestCredentialRecords, requestVoteRecords, connected } = useAleoWallet()
-  const { castVote, status: voteStatus } = useVoting()
+  const { castVote } = useVoting()
 
   const [credential, setCredential]   = useState<Credential | null>(null)
   const [voteRecord, setVoteRecord]   = useState<VoteRecord | null>(null)
@@ -121,8 +121,10 @@ export function useCredentialHub(community: CommunityConfig): CredentialHubState
 
     // Find the poll this vote was cast on
     const pollId = voteRecord.poll_id
+    const matchedPoll = community.polls?.find(p => p.poll_id === pollId)
+    const operatorAddress = matchedPoll?.operator_address
 
-    await castVote(pollId, community.community_id, community.credential_type, ranking, credential)
+    await castVote(pollId, community.community_id, community.credential_type, ranking, credential, operatorAddress)
     await load()  // refresh after recast
   }, [voteRecord, credential, community, castVote, load])
 

@@ -59,6 +59,7 @@ export interface PollInfo {
   required_credential_type: number
   created_at_block: number
   end_block?: number
+  operator_address?: string  // Aleo address of tally operator — needed for cast_vote
   options: PollOptionInfo[]
   ipfs_cid?: string   // IPFS CID of full poll metadata (set by verifier on registration)
 }
@@ -101,6 +102,7 @@ export interface Poll {
   active: boolean
   options: PollOption[]
   vote_count?: number
+  operator_address?: string
 }
 
 // ─── Vote state ───────────────────────────────────────────────────────────────

@@ -3,26 +3,21 @@ import { useParams, Link } from 'react-router-dom'
 import { useAleoWallet } from '../hooks/useAleoWallet'
 import { useVoteHistory } from '../hooks/useVoteHistory'
 import { getPollMeta, getLatestSnapshot } from '../lib/aleo'
-import type { PollMeta, Snapshot } from '../types'
+import { getCommunity } from '../lib/verifier'
+import type { PollMeta, Snapshot, PollOption } from '../types'
 
 function decayScore(rank: number): number { return rank > 0 ? 1 / rank : 0 }
 
-function makeOptions(snapshot: Snapshot) {
-  const ids = new Set([
-    snapshot.rank_1_option, snapshot.rank_2_option, snapshot.rank_3_option,
-    snapshot.rank_4_option, snapshot.rank_5_option, snapshot.rank_6_option,
-    snapshot.rank_7_option, snapshot.rank_8_option,
-  ])
-  ids.delete(0)
-  return Array.from(ids).map(id => ({ option_id: id, label: `Option ${id}` }))
+function optionLabel(optionId: number, options: PollOption[]): string {
+  return options.find(o => o.option_id === optionId)?.label ?? `Option ${optionId}`
 }
 
-function RankedList({ snapshot, options }: { snapshot: Snapshot; options: { option_id: number; label: string }[] }) {
+function RankedList({ snapshot, options }: { snapshot: Snapshot; options: PollOption[] }) {
   const ranked = (['rank_1_option','rank_2_option','rank_3_option','rank_4_option',
     'rank_5_option','rank_6_option','rank_7_option','rank_8_option'] as (keyof Snapshot)[])
     .map((field, idx) => {
       const optionId = snapshot[field] as number
-      return { rank: idx + 1, optionId, label: options.find(o => o.option_id === optionId)?.label ?? `Option ${optionId}` }
+      return { rank: idx + 1, optionId, label: optionLabel(optionId, options) }
     })
     .filter(r => r.optionId > 0)
 
@@ -63,17 +58,22 @@ export default function PollResults() {
 
   const [meta, setMeta] = useState<PollMeta | null>(null)
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const [options, setOptions] = useState<PollOption[]>([])
   const [loading, setLoading] = useState(true)
   const [noSnapshot, setNoSnapshot] = useState(false)
 
   useEffect(() => {
-    if (!pollId) return
+    if (!pollId || !communityId) return
     setLoading(true)
     Promise.all([
       getPollMeta(pollId).then(setMeta),
       getLatestSnapshot(pollId).then(snap => { if (!snap) setNoSnapshot(true); else setSnapshot(snap) }),
+      getCommunity(communityId).then(c => {
+        const poll = c.polls?.find(p => p.poll_id === pollId)
+        if (poll?.options) setOptions(poll.options)
+      }).catch(() => {}),
     ]).finally(() => setLoading(false))
-  }, [pollId])
+  }, [pollId, communityId])
 
   const myVotes = pollId ? forPoll(pollId) : []
 
@@ -139,7 +139,7 @@ export default function PollResults() {
                 </div>
               </div>
               <div className="p-5">
-                <RankedList snapshot={snapshot} options={makeOptions(snapshot)} />
+                <RankedList snapshot={snapshot} options={options} />
               </div>
               <div className="bg-[#0070F3] text-white px-5 py-3.5 text-sm font-medium">
                 Rankings use MDCT decay-weighted scoring (1/rank). Computed from encrypted ballots.
@@ -158,7 +158,7 @@ export default function PollResults() {
                     {v.rankings.map((optId, idx) =>
                       optId > 0 ? (
                         <span key={idx} className="text-xs bg-blue-50 text-blue-600 border border-blue-100 px-2.5 py-1 rounded-full">
-                          #{idx + 1} → Opt {optId}
+                          #{idx + 1} → {optionLabel(optId, options)}
                         </span>
                       ) : null
                     )}

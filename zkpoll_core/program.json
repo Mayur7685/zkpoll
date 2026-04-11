@@ -1,0 +1,9 @@
+{
+  "program": "zkpoll_core.aleo",
+  "version": "0.1.0",
+  "description": "ZKPoll core contract — community registry, poll management, private voting with operator copy, and on-chain snapshot.",
+  "license": "MIT",
+  "leo": "4.0.0",
+  "dependencies": null,
+  "dev_dependencies": null
+}

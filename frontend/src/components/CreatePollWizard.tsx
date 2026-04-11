@@ -46,7 +46,7 @@ function buildOptionList(drafts: OptionDraft[]): PollOptionInfo[] {
   })).sort((a, b) => a.option_id - b.option_id)
 }
 
-type DeployStatus = 'idle' | 'creating_poll' | 'registering_deadline' | 'registering' | 'done' | 'error'
+type DeployStatus = 'idle' | 'creating_poll' | 'registering' | 'done' | 'error'
 
 const inputCls = "block w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900 transition-all"
 const labelCls = "block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide"
@@ -82,7 +82,6 @@ function WizardStepper({ step }: { step: number }) {
 export default function CreatePollWizard() {
   const navigate = useNavigate()
   const { executeTransaction, connected, address } = useAleoWallet()
-
   const [step, setStep] = useState(1)
   const [communities, setCommunities] = useState<CommunityConfig[]>([])
   const [nextDraftId, setNextDraftId] = useState(1)
@@ -158,7 +157,9 @@ export default function CreatePollWizard() {
   const step2Valid = options.length >= 2 && options.every(o => o.label.trim() !== '')
 
   async function handleDeploy() {
-    if (!connected || !address) return
+    if (!connected || !address || !executeTransaction) {
+      setDeployError('Connect your Aleo wallet first.'); return
+    }
     setDeployStatus('creating_poll'); setDeployError('')
     try {
       const pollIdField  = generatePollId(communityId, title)
@@ -170,24 +171,26 @@ export default function CreatePollWizard() {
       // ~2.5s per block on Aleo testnet → 34560 blocks/day
       const BLOCKS_PER_DAY = 34560
       const endBlock = blockHeight + durationDays * BLOCKS_PER_DAY
+      const operator = import.meta.env.VITE_OPERATOR_ADDRESS as string ?? ''
 
-      // Tx 1 of 2: create poll on-chain (title/description/options stored off-chain below)
-      setDeployMessage('Creating poll on-chain… (1 of 2)')
+      // Tx 1: create poll on-chain — user wallet is self.caller, must match community.creator
+      setDeployMessage('Creating poll on-chain… (wallet signature required)')
       await executeTransaction({
-        program: 'zkpoll_create.aleo', function: 'create_poll', fee: 20_000, privateFee: false,
-        inputs: [`${pollIdStr}field`, `${communityFld}field`, `${requiredCredType}u8`, `${blockHeight}u32`, `${endBlock}u32`],
+        program:    'zkpoll_core.aleo',
+        function:   'create_poll',
+        fee:        20_000,
+        privateFee: false,
+        inputs: [
+          `${pollIdStr}field`,
+          `${communityFld}field`,
+          `${requiredCredType}u8`,
+          `${blockHeight}u32`,
+          `${endBlock}u32`,
+          operator,
+        ],
       })
 
-      // Tx 2 of 2: register deadline in vote_cast contract
-      setDeployStatus('registering_deadline')
-      setDeployMessage('Registering deadline on-chain… (2 of 2)')
-      await executeTransaction({
-        program: 'zkpoll_vote2.aleo', function: 'register_poll_deadline', fee: 10_000, privateFee: false,
-        inputs: [`${pollIdStr}field`, `${endBlock}u32`],
-      })
-
-      // Off-chain: save title, description, and full options tree to verifier backend
-      // (No on-chain tx needed — vote contract only uses ranking slots, not option labels)
+      // Off-chain: save title, description, options to verifier (+ IPFS pin)
       setDeployStatus('registering'); setDeployMessage('Saving poll metadata…')
       await registerPoll(communityId, {
         poll_id: pollIdStr, title, description: description.trim() || undefined,
@@ -376,21 +379,15 @@ export default function CreatePollWizard() {
                         })}
                       </div>
                       <div className="bg-[#0070F3] text-white px-4 py-3 text-sm font-medium">
-                        2 wallet signatures only. Options are stored off-chain — no per-option transactions.
+                        1 wallet signature. Options are stored off-chain — no per-option transactions.
                       </div>
                     </>
                   )
                 })()}
               </div>
 
-              {!connected && (
-                <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
-                  <p className="text-sm text-amber-700">Connect your wallet to deploy.</p>
-                </div>
-              )}
-
               {/* Deploy progress / success */}
-              {deployStatus === 'creating_poll' || deployStatus === 'registering_deadline' || deployStatus === 'registering' ? (
+              {deployStatus === 'creating_poll' || deployStatus === 'registering' ? (
                 <div className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
                   <div className="w-4 h-4 border-2 border-[#0070F3] border-t-transparent rounded-full animate-spin shrink-0" />
                   <p className="text-sm text-blue-700 font-medium">{deployMessage}</p>
@@ -453,10 +450,10 @@ export default function CreatePollWizard() {
                     )
                   })()
                 ) : (
-                  connected && (deployStatus === 'idle' || deployStatus === 'error') && (
-                    <button onClick={() => void handleDeploy()}
-                      className="flex-1 py-3.5 bg-[#0070F3] hover:bg-blue-600 text-white font-medium rounded-xl text-sm transition-colors shadow-sm">
-                      Deploy Poll
+                  (deployStatus === 'idle' || deployStatus === 'error') && (
+                    <button onClick={() => void handleDeploy()} disabled={!connected}
+                      className="flex-1 py-3.5 bg-[#0070F3] hover:bg-blue-600 text-white font-medium rounded-xl text-sm transition-colors shadow-sm disabled:opacity-60">
+                      {connected ? 'Deploy Poll' : 'Connect Wallet'}
                     </button>
                   )
                 )}

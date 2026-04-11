@@ -213,12 +213,14 @@ export default function MyVotes() {
       vote.record.rankings.forEach((optId, idx) => {
         if (optId > 0) ranking[optId] = idx + 1
       })
+      const matchedPoll = vote.community.polls?.find(p => p.poll_id === vote.record.poll_id)
       await castVote(
         vote.record.poll_id,
         vote.community.community_id,
         vote.community.credential_type,
         ranking,
         vote.credential,
+        matchedPoll?.operator_address,
       )
       await load()
     } finally {

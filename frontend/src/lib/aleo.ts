@@ -66,17 +66,17 @@ export async function getMappingValue(
 }
 
 export async function getPollVoteCount(pollId: string): Promise<number> {
-  const raw = await getMappingValue('zkpoll_vote2.aleo', 'poll_vote_count', `${pollId}field`)
+  const raw = await getMappingValue('zkpoll_core.aleo', 'poll_vote_count', `${pollId}field`)
   return stripU32(raw ?? '0u32')
 }
 
 export async function isNullifierUsed(nullifier: string): Promise<boolean> {
-  const val = await getMappingValue('zkpoll_vote2.aleo', 'used_nullifiers', nullifier)
+  const val = await getMappingValue('zkpoll_core.aleo', 'used_nullifiers', nullifier)
   return val === 'true'
 }
 
 export async function getPollMeta(pollId: string): Promise<PollMeta | null> {
-  const raw = await getMappingValue('zkpoll_create.aleo', 'polls', `${pollId}field`)
+  const raw = await getMappingValue('zkpoll_core.aleo', 'polls', `${pollId}field`)
   if (!raw) return null
   const f = parseLeoStruct(raw)
   return {
@@ -90,12 +90,12 @@ export async function getPollMeta(pollId: string): Promise<PollMeta | null> {
 
 export async function getLatestSnapshot(pollId: string): Promise<Snapshot | null> {
   // Step 1: look up the latest snapshot ID for this poll
-  const snapIdRaw = await getMappingValue('zkpoll_tally.aleo', 'latest_snapshot', `${pollId}field`)
+  const snapIdRaw = await getMappingValue('zkpoll_core.aleo', 'latest_snapshot', `${pollId}field`)
   if (!snapIdRaw) return null
   const snapId = snapIdRaw.replace(/u32$/, '')
 
   // Step 2: fetch the snapshot struct
-  const raw = await getMappingValue('zkpoll_tally.aleo', 'snapshots', snapId)
+  const raw = await getMappingValue('zkpoll_core.aleo', 'snapshots', snapId)
   if (!raw) return null
   const f = parseLeoStruct(raw)
   return {

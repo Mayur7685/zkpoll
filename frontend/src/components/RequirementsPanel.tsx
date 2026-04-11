@@ -92,7 +92,7 @@ export default function RequirementsPanel({
         setStatus('issuing')
         try {
           const result = await executeTransaction({
-            program:    'zkpoll_vote2.aleo',
+            program:    'zkpoll_core.aleo',
             function:   'issue_credential',
             fee:        60_000,   // microcredits
             privateFee: false,

@@ -68,11 +68,11 @@ export function useAleoWallet() {
     transactionStatus,
   } = useWallet()
 
-  /** Fetch private Vote records from zkpoll_vote2.aleo. */
+  /** Fetch private Vote records from zkpoll_core.aleo. */
   const requestVoteRecords = useCallback(async (): Promise<VoteRecord[]> => {
     if (!connected || !requestRecords) return []
     try {
-      const raw: unknown[] = (await requestRecords('zkpoll_vote2.aleo', true)) ?? []
+      const raw: unknown[] = (await requestRecords('zkpoll_core.aleo', true)) ?? []
       // Filter to Vote records only — they have 'rank_1'; Credential records have 'issued_at'
       const voteRaw = raw.filter((r) => {
         const rec = r as Record<string, unknown>
@@ -104,18 +104,18 @@ export function useAleoWallet() {
     }
   }, [connected, requestRecords])
 
-  /** Fetch private Credential records from zkpoll_vote2.aleo (where they are issued and consumed). */
+  /** Fetch private Credential records from zkpoll_core.aleo (where they are issued and consumed). */
   const requestCredentialRecords = useCallback(async (): Promise<Credential[]> => {
     if (!connected || !requestRecords) {
       console.debug('[zkpoll] requestCredentialRecords: skipped — connected:', connected, 'requestRecords:', !!requestRecords)
       return []
     }
     try {
-      // Credentials are issued by zkpoll_vote2.aleo::issue_credential — same program as cast_vote.
+      // Credentials are issued by zkpoll_core.aleo::issue_credential — same program as cast_vote.
       // This ensures record commitments match (program-scoped in Aleo VM).
-      const raw: unknown[] = (await requestRecords('zkpoll_vote2.aleo', true)) ?? []
+      const raw: unknown[] = (await requestRecords('zkpoll_core.aleo', true)) ?? []
 
-      // Filter to Credential records only (Vote records also live in zkpoll_vote2.aleo).
+      // Filter to Credential records only (Vote records also live in zkpoll_core.aleo).
       // A Credential has 'issued_at'; a Vote has 'rank_1'. Use that to distinguish.
       const v2raw = raw.filter((r) => {
         const rec = r as Record<string, unknown>
@@ -166,9 +166,9 @@ export function useAleoWallet() {
     executeTransaction,
     /** Poll the on-chain status of a submitted transaction by its wallet txId. */
     transactionStatus,
-    /** Fetch private Vote records from zkpoll_vote2.aleo. */
+    /** Fetch private Vote records from zkpoll_core.aleo. */
     requestVoteRecords,
-    /** Fetch private Credential records from zkpoll_vote2.aleo. */
+    /** Fetch private Credential records from zkpoll_core.aleo. */
     requestCredentialRecords,
   }
 }

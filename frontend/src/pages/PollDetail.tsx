@@ -184,7 +184,7 @@ export default function PollDetail() {
     if (!communityId || !pollId || !address) return
     setShowConfirm(false)
     setNoCredential(null)
-    await castVote(pollId, communityId, poll!.required_credential_type, ranking)
+    await castVote(pollId, communityId, poll!.required_credential_type, ranking, undefined, poll!.operator_address)
     // Status effects handled by useEffect above
   }
 

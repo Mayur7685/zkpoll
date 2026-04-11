@@ -39,6 +39,8 @@ export function useVoting() {
     ranking: VoteRanking,
     /** Optional: pass credential if already fetched; otherwise auto-fetched from wallet */
     credential?: Credential,
+    /** Operator address from poll.operator_address — required for zkpoll_core.aleo */
+    operatorAddress?: string,
   ) => {
     if (!connected || !address) { setError('Wallet not connected'); return }
 
@@ -102,10 +104,11 @@ export function useVoting() {
       console.debug('[zkpoll] castVote credInput (first 120 chars):', credInput?.slice(0, 120))
       console.debug('[zkpoll] castVote all inputs:', [`${pollId}field`, `${fieldFromString(communityId)}field`, `${requiredCredType}u8`, nullifier, `${blockHeight}u32`])
 
-      // v3: community_id, required_cred_type, cast_at, and r1-r8 are all PRIVATE inputs.
-      // Only poll_id and nullifier are public (needed by the finalize mapping updates).
+      // zkpoll_core: community_id, required_cred_type, cast_at, and r1-r8 are PRIVATE.
+      // poll_id, nullifier, and operator are public (finalize mapping updates).
+      const operator = operatorAddress ?? (import.meta.env.VITE_OPERATOR_ADDRESS as string) ?? ''
       const result = await executeTransaction!({
-        program:  'zkpoll_vote2.aleo',
+        program:  'zkpoll_core.aleo',
         function: 'cast_vote',
         fee:      VOTE_FEE,
         privateFee: false,
@@ -116,6 +119,7 @@ export function useVoting() {
           `${requiredCredType}u8`,                // PRIVATE — ZK only
           nullifier,                              // public  — finalize double-vote
           `${blockHeight}u32`,                    // PRIVATE — ZK only
+          operator,                               // public  — OperatorVote owner
           `${r1}u8`, `${r2}u8`, `${r3}u8`, `${r4}u8`,  // PRIVATE — ballot
           `${r5}u8`, `${r6}u8`, `${r7}u8`, `${r8}u8`,  // PRIVATE — ballot
         ],

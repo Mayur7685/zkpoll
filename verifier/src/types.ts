@@ -57,6 +57,8 @@ export interface PollInfo {
   description?: string
   required_credential_type: number
   created_at_block: number
+  end_block?: number         // block height after which voting closes
+  operator_address?: string  // Aleo address of the tally operator (from OPERATOR_ADDRESS env)
   options: PollOptionInfo[]
   ipfs_cid?: string          // CID of the full poll metadata on IPFS (Pinata)
 }

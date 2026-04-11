@@ -4,7 +4,16 @@
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createCommunity } from '../lib/verifier'
+import { useAleoWallet } from '../hooks/useAleoWallet'
 import type { CommunityConfig, RequirementGroup, Requirement, RequirementType } from '../types'
+
+const FIELD_MODULUS = 8444461749428370424248824938781546531375899335154063827935233455917409239041n
+function fieldFromString(s: string): bigint {
+  if (/^\d+$/.test(s)) return BigInt(s) % FIELD_MODULUS
+  let h = 0n
+  for (let i = 0; i < s.length; i++) h = (h * 31n + BigInt(s.charCodeAt(i))) % FIELD_MODULUS
+  return h
+}
 
 const REQ_TYPES: { value: RequirementType; label: string; needsChain?: boolean }[] = [
   { value: 'FREE',             label: 'Free (anyone)' },
@@ -358,6 +367,7 @@ function WizardStepper({ step }: { step: number }) {
 
 export default function CreateCommunityWizard() {
   const navigate = useNavigate()
+  const { executeTransaction, connected } = useAleoWallet()
   const [step, setStep]     = useState(0)
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState<string | null>(null)
@@ -370,6 +380,7 @@ export default function CreateCommunityWizard() {
   const canNext = step === 0 ? details.name.trim().length > 0 : true
 
   const handleCreate = async () => {
+    if (!connected || !executeTransaction) { setError('Connect your Aleo wallet first.'); return }
     setSaving(true); setError(null)
     try {
       const community_id = details.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -378,7 +389,26 @@ export default function CreateCommunityWizard() {
         credential_type: details.credential_type, credential_expiry_days: details.credential_expiry_days,
         requirement_groups: groups,
       }
-      await createCommunity(config)
+
+      // Step 1: save config to verifier (off-chain registry + IPFS pin)
+      const { ipfs_cid } = await createCommunity(config) as { community_id: string; ipfs_cid?: string }
+
+      // Step 2: register community on-chain — user wallet pays gas, self.caller = creator
+      // config_hash = field derived from IPFS CID (or community_id as fallback)
+      const configHashSrc = ipfs_cid ?? community_id
+      const communityField = fieldFromString(community_id)
+      const configHashField = fieldFromString(configHashSrc)
+      await executeTransaction({
+        program:    'zkpoll_core.aleo',
+        function:   'register_community',
+        fee:        20_000,
+        privateFee: false,
+        inputs: [
+          `${communityField}field`,
+          `${configHashField}field`,
+        ],
+      })
+
       navigate(`/communities/${community_id}`)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e)); setSaving(false)
@@ -437,9 +467,9 @@ export default function CreateCommunityWizard() {
                   Continue
                 </button>
               ) : (
-                <button onClick={() => void handleCreate()} disabled={saving}
+                <button onClick={() => void handleCreate()} disabled={saving || !connected}
                   className="flex-1 py-3.5 bg-[#0070F3] hover:bg-blue-600 text-white font-medium rounded-xl text-sm transition-colors shadow-sm disabled:opacity-60">
-                  {saving ? 'Creating…' : 'Create Community'}
+                  {saving ? 'Creating…' : !connected ? 'Connect Wallet' : 'Create Community'}
                 </button>
               )}
             </div>

@@ -6,9 +6,10 @@ import { evaluateRequirements, calculateVotingWeight } from "./evaluator.js"
 import { issueCredential, getCurrentBlockHeight } from "./issuer.js"
 import { loadCommunities, getCommunityConfig, getAllCommunities, saveCommunityConfig } from "./communities.js"
 import { pinJSON, isPinataConfigured, ipfsUrl } from "./pinata.js"
-import { computeTally, getCurrentBlockHeight as getTallyBlock, OnChainVote } from "./tally.js"
+
+import { startTallyRunner, manualTally } from "./tally-runner.js"
 import { ConnectedAccount, CommunityConfig, PollInfo } from "./types.js"
-import { generateState, consumeState, pkce, popupSuccess, popupError, storeUserToken, getUserMeta } from "./oauth.js"
+import { generateState, consumeState, pkce, popupSuccess, popupError, storeUserToken } from "./oauth.js"
 import { verifyTelegramAuth } from "./checkers/social_follow.js"
 
 const app = express()
@@ -282,6 +283,7 @@ app.post("/communities", async (req: Request, res: Response) => {
   }
 
   saveCommunityConfig(config)
+  // On-chain register_community is called by the user's wallet in the frontend (Option A).
   res.status(201).json({ community_id: config.community_id, ipfs_cid })
 })
 
@@ -292,6 +294,11 @@ app.post("/communities/:id/polls", async (req: Request, res: Response) => {
   const poll = req.body as PollInfo
   if (!poll.poll_id || !poll.title) {
     return res.status(400).json({ error: "Missing poll_id or title" })
+  }
+
+  // Stamp operator address so the frontend knows who to pass to cast_vote
+  if (process.env.OPERATOR_ADDRESS) {
+    poll.operator_address = process.env.OPERATOR_ADDRESS
   }
 
   // Pin full poll metadata to IPFS — includes options + description (best-effort)
@@ -309,6 +316,7 @@ app.post("/communities/:id/polls", async (req: Request, res: Response) => {
 
   community.polls = [...(community.polls ?? []), poll]
   saveCommunityConfig(community)
+  // On-chain create_poll is called by the user's wallet in the frontend (Option A).
   res.status(201).json({ poll_id: poll.poll_id, ipfs_cid: poll.ipfs_cid })
 })
 
@@ -445,39 +453,17 @@ app.post("/verify", async (req: Request, res: Response) => {
 // ─── Tally / Snapshot ────────────────────────────────────────────────────────
 
 // POST /polls/:id/snapshot
-// Body: { votes: OnChainVote[] }
-// Operator submits the collected vote ballots; verifier tallies with MDCT
-// decay model, pins result to IPFS, and returns the snapshot struct ready
-// for on-chain submission via zkpoll_tally.aleo::record_snapshot.
-//
-// Because v3 rankings are private ZK witnesses (not readable on-chain),
-// the operator must supply ballots collected from participating wallets.
-app.post("/polls/:id/snapshot", async (req: Request, res: Response) => {
-  const pollId = req.params.id
-  const { votes } = req.body as { votes: OnChainVote[] }
-
-  if (!Array.isArray(votes) || votes.length === 0) {
-    return res.status(400).json({ error: "votes array required" })
-  }
+// Body: { communityId: string, force?: boolean }
+// POST /operator/tally/:pollId — manual tally trigger (preview or force publish)
+// Body: { communityId: string, force?: boolean }
+// Returns the tally result. If force=true, also publishes snapshot on-chain.
+app.post("/operator/tally/:pollId", async (req: Request, res: Response) => {
+  const { communityId, force = false } = req.body as { communityId: string; force?: boolean }
+  if (!communityId) return res.status(400).json({ error: "communityId required" })
 
   try {
-    const currentBlock = await getTallyBlock()
-    const tally        = computeTally(pollId, votes, currentBlock)
-
-    // Pin tally result to IPFS for auditability (best-effort)
-    let ipfs_cid: string | undefined
-    let ipfs_url: string | undefined
-    if (isPinataConfigured()) {
-      try {
-        ipfs_cid = await pinJSON(tally, `snapshot-${pollId}-${currentBlock}`)
-        ipfs_url  = ipfsUrl(ipfs_cid)
-        console.log(`Snapshot for poll ${pollId} pinned: ${ipfs_cid}`)
-      } catch (e: any) {
-        console.warn("Pinata snapshot upload failed (non-fatal):", e.message)
-      }
-    }
-
-    res.json({ ...tally, ipfs_cid, ipfs_url })
+    const result = await manualTally(req.params.pollId, communityId, !!force)
+    res.json(result)
   } catch (e: any) {
     res.status(500).json({ error: "Tally failed", detail: e.message })
   }
@@ -498,6 +484,7 @@ app.get("/polls/:id/vote-count", async (req: Request, res: Response) => {
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 loadCommunities()
+startTallyRunner()
 
 const PORT = Number(process.env.PORT ?? 3001)
 app.listen(PORT, () => {
