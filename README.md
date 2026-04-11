@@ -11,7 +11,7 @@ ZKPoll is a decentralised governance platform built on Aleo that enables communi
 | **Contract** | `zkpoll_core.aleo` |
 | **Network** | Aleo Testnet |
 | **Deploy tx** | `at1ywsyq84d0zshjkc6py34skxgkmexqkhp0xk29nmy5upgr2hpguxq9qkx2c` |
-| **Explorer** | https://explorer.provable.com/transaction/at1ywsyq84d0zshjkc6py34skxgkmexqkhp0xk29nmy5upgr2hpguxq9qkx2c |
+| **Explorer** | https://testnet.explorer.provable.com/transaction/at1ywsyq84d0zshjkc6py34skxgkmexqkhp0xk29nmy5upgr2hpguxq9qkx2c |
 
 ---
 
