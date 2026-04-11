@@ -2,7 +2,7 @@
 
 import type { CommunityConfig, ConnectedAccount, VerifyResponse, CredentialParamsResponse, PollInfo } from '../types'
 
-const BASE = (import.meta.env.VITE_VERIFIER_URL ?? '') + '/api'
+const BASE = import.meta.env.VITE_VERIFIER_URL ?? '/api'
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`)
