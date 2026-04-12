@@ -46,40 +46,49 @@ const ROUTES: Partial<Record<ConnectorType, string>> = {
   TELEGRAM:  `${VERIFIER}/auth/telegram`,
 }
 
-/** Open a centered popup and resolve when the BroadcastChannel fires. */
+/** Open a centered popup and resolve when the BroadcastChannel or postMessage fires. */
 function oauthPopup(
   url: string,
   channelName: string,
 ): Promise<{ userId: string; username: string }> {
   return new Promise((resolve, reject) => {
-    // Center the popup
     const w = 520, h = 680
     const left = Math.round(window.screenX + (window.outerWidth - w) / 2)
     const top  = Math.round(window.screenY + (window.outerHeight - h) / 2)
     const popup = window.open(url, channelName, `width=${w},height=${h},left=${left},top=${top},scrollbars=yes`)
     if (!popup) { reject(new Error('Popup blocked — allow popups for this site')); return }
 
+    let settled = false
     const channel = new BroadcastChannel(channelName)
 
     const cleanup = () => {
       channel.close()
+      window.removeEventListener('message', onMessage)
       clearInterval(closedPoll)
     }
 
-    channel.onmessage = (e) => {
-      // Send confirmation so the popup knows we received it
-      channel.postMessage({ type: 'oauth-confirmation' })
+    const handle = (data: Record<string, string>) => {
+      if (settled) return
+      settled = true
       cleanup()
-      if (e.data?.status === 'success') {
-        resolve({ userId: e.data.userId, username: e.data.username })
+      if (data?.status === 'success') {
+        resolve({ userId: data.userId, username: data.username })
       } else {
-        reject(new Error(e.data?.message ?? 'OAuth failed'))
+        reject(new Error(data?.message ?? 'OAuth failed'))
       }
     }
 
-    // Reject if user closes the popup without completing OAuth
+    // Same-origin: BroadcastChannel
+    channel.onmessage = (e) => handle(e.data)
+
+    // Cross-origin: window.postMessage
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.channel === channelName) handle(e.data)
+    }
+    window.addEventListener('message', onMessage)
+
     const closedPoll = setInterval(() => {
-      if (popup.closed) { cleanup(); reject(new Error('Popup closed')) }
+      if (popup.closed && !settled) { cleanup(); reject(new Error('Popup closed')) }
     }, 600)
   })
 }

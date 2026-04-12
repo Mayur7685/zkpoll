@@ -91,39 +91,30 @@ export function popupSuccess(
   channelName: string,
   data: Record<string, string>,
 ): string {
-  const payload = JSON.stringify({ status: 'success', ...data })
+  const payload = JSON.stringify({ status: 'success', channel: channelName, ...data })
   return `<!DOCTYPE html><html><head><title>Connected</title></head><body>
 <p style="font-family:sans-serif;text-align:center;padding:48px 24px;color:#555;font-size:15px">
   Connected! Closing…</p>
 <script>
-  try {
-    const ch = new BroadcastChannel(${JSON.stringify(channelName)})
-    ch.postMessage(${payload})
-    // Confirm receipt then close
-    ch.onmessage = () => { ch.close(); window.close() }
-    setTimeout(() => { ch.close(); window.close() }, 2000)
-  } catch(e) {
-    // Fallback for browsers without BroadcastChannel
-    try { window.opener?.postMessage(${payload}, '*') } catch(_) {}
-    setTimeout(() => window.close(), 500)
-  }
+  const payload = ${payload}
+  // Cross-origin: use postMessage to opener (works across domains)
+  if (window.opener) { window.opener.postMessage(payload, '*') }
+  // Same-origin fallback: BroadcastChannel
+  try { const ch = new BroadcastChannel(${JSON.stringify(channelName)}); ch.postMessage(payload); setTimeout(() => ch.close(), 500) } catch(_) {}
+  setTimeout(() => window.close(), 500)
 </script></body></html>`
 }
 
 export function popupError(channelName: string, message: string): string {
-  const payload = JSON.stringify({ status: 'error', message })
+  const payload = JSON.stringify({ status: 'error', channel: channelName, message })
   const safe = message.replace(/</g, '&lt;')
   return `<!DOCTYPE html><html><head><title>Error</title></head><body>
 <p style="font-family:sans-serif;text-align:center;padding:48px 24px;color:#c00;font-size:15px">
   ${safe}</p>
 <script>
-  try {
-    const ch = new BroadcastChannel(${JSON.stringify(channelName)})
-    ch.postMessage(${payload})
-    ch.onmessage = () => { ch.close(); window.close() }
-    setTimeout(() => { ch.close(); window.close() }, 3000)
-  } catch(e) {
-    setTimeout(() => window.close(), 3000)
-  }
+  const payload = ${payload}
+  if (window.opener) { window.opener.postMessage(payload, '*') }
+  try { const ch = new BroadcastChannel(${JSON.stringify(channelName)}); ch.postMessage(payload); setTimeout(() => ch.close(), 500) } catch(_) {}
+  setTimeout(() => window.close(), 3000)
 </script></body></html>`
 }
