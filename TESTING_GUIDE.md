@@ -9,7 +9,7 @@
 
 ## Quick Start — Testing on the Live Demo (Vercel + Render)
 
-The deployed site at **https://zkpoll-three.vercel.app** is fully functional for:
+The deployed site at **https://zkpoll-aleo.vercel.app** is fully functional for:
 
 | Feature | Works on Live Demo |
 |---|---|
