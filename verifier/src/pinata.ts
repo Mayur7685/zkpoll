@@ -60,7 +60,20 @@ export function ipfsUrl(cid: string): string {
   return `https://${gateway()}.mypinata.cloud/ipfs/${cid}`
 }
 
-/** Delete a Pinata file by its CID (best-effort; does not throw on error). */
+/** List latest pinned file per unique name matching a given prefix. */
+export async function listPinsByPrefix(prefix: string): Promise<Array<{ name: string; cid: string }>> {
+  const res = await fetch(
+    `https://api.pinata.cloud/v3/files/public?name=${encodeURIComponent(prefix)}&limit=1000`,
+    { headers: { Authorization: `Bearer ${jwt()}` } }
+  )
+  if (!res.ok) throw new Error(`Pinata list failed (${res.status})`)
+  const json = await res.json() as { data: { files: Array<{ name: string; cid: string; created_at: string }> } }
+  const files = json.data.files ?? []
+  // Sort newest first, deduplicate by name — keep only the latest pin per community
+  files.sort((a, b) => b.created_at.localeCompare(a.created_at))
+  const seen = new Set<string>()
+  return files.filter(f => { if (seen.has(f.name)) return false; seen.add(f.name); return true })
+}
 export async function unpin(cid: string): Promise<void> {
   try {
     await fetch(`https://api.pinata.cloud/pinning/unpin/${cid}`, {
