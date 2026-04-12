@@ -553,6 +553,22 @@ app.post("/verify", async (req: Request, res: Response) => {
   }
 })
 
+// DELETE /communities/:id/polls/:pollId — remove a poll from community (admin only)
+// Protected by ADMIN_SECRET env var
+app.delete("/communities/:id/polls/:pollId", (req: Request, res: Response) => {
+  const secret = process.env.ADMIN_SECRET
+  if (!secret || req.headers['x-admin-secret'] !== secret) {
+    return res.status(401).json({ error: "Unauthorized" })
+  }
+  const community = getCommunityConfig(req.params.id)
+  if (!community) return res.status(404).json({ error: "Community not found" })
+  const before = (community.polls ?? []).length
+  community.polls = (community.polls ?? []).filter(p => p.poll_id !== req.params.pollId)
+  if (community.polls.length === before) return res.status(404).json({ error: "Poll not found" })
+  saveCommunityConfig(community)
+  res.json({ ok: true, removed: req.params.pollId })
+})
+
 // POST /polls/:pollId/vote-tx — called by frontend after cast_vote confirms
 // Persists the tx ID to the community JSON file so tally engine can fetch it
 app.post("/polls/:pollId/vote-tx", (req: Request, res: Response) => {

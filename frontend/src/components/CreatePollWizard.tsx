@@ -346,10 +346,11 @@ export default function CreatePollWizard() {
               </div>
               <div>
                 <label className={labelCls}>Required Credential Type</label>
-                <div className="flex items-center gap-3">
-                  <input className={inputCls} type="number" min={0} max={255} style={{ maxWidth: 120 }}
-                    value={requiredCredType} onChange={e => setRequiredCredType(Number(e.target.value))} />
-                  <span className="text-xs text-gray-400">0 = open to all</span>
+                <div className="flex items-center gap-2">
+                  <span className="px-3.5 py-2.5 bg-gray-100 border border-gray-200 rounded-xl text-sm text-gray-700 font-medium">
+                    Type {requiredCredType}
+                  </span>
+                  <span className="text-xs text-gray-400">Inherited from community — cannot be changed</span>
                 </div>
               </div>
               <div>
