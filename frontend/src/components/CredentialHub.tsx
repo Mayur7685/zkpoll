@@ -54,6 +54,29 @@ const REQ_ICONS: Record<string, string> = {
   DISCORD_ROLE:     '🏷',
 }
 
+function reqDetail(req: Requirement): string | null {
+  const p = req.params
+  switch (req.type) {
+    case 'X_FOLLOW':         return p.handle ? `Follow ${p.handle}` : null
+    case 'DISCORD_MEMBER':   return p.serverId ? `Server ID: ${p.serverId}` : null
+    case 'DISCORD_ROLE':     return p.roleId ? `Role ID: ${p.roleId}` : null
+    case 'GITHUB_ACCOUNT':
+      if (p.starredRepo)  return `Star ${p.starredRepo}`
+      if (p.commitsRepo)  return `${p.minCommits ?? 1}+ commits to ${p.commitsRepo}`
+      if (p.orgName)      return `Member of ${p.orgName}`
+      if (p.minRepos)     return `${p.minRepos}+ public repos`
+      if (p.minFollowers) return `${p.minFollowers}+ followers`
+      return 'GitHub account required'
+    case 'TELEGRAM_MEMBER':  return p.chatId ? `Chat ID: ${p.chatId}` : null
+    case 'TOKEN_BALANCE':    return p.minAmount ? `Min ${p.minAmount}${p.tokenAddress ? ` (${p.tokenAddress.slice(0,8)}…)` : ''}` : null
+    case 'NFT_OWNERSHIP':    return p.contractAddress ? `Contract: ${p.contractAddress.slice(0,8)}…` : null
+    case 'ONCHAIN_ACTIVITY': return `${p.minTxCount ?? 1}+ transactions`
+    case 'ALLOWLIST':        return `${(p.addresses ?? []).length} addresses`
+    case 'DOMAIN_OWNERSHIP': return p.domain ?? null
+    default: return null
+  }
+}
+
 function reqVoteWeight(req: Requirement): number {
   return req.params.vote_weight ?? DEFAULT_WEIGHTS[req.type] ?? 1
 }
@@ -309,6 +332,9 @@ export default function CredentialHub({ community }: Props) {
                         <span className="ml-1.5 text-xs text-gray-400 bg-white border border-gray-100 px-1.5 py-0.5 rounded-full">
                           {req.chain}
                         </span>
+                      )}
+                      {reqDetail(req) && (
+                        <p className="text-xs text-gray-500 mt-0.5">{reqDetail(req)}</p>
                       )}
                     </div>
                   </div>
