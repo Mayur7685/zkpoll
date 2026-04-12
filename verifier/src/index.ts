@@ -237,6 +237,55 @@ app.get("/auth/telegram/callback", (req: Request, res: Response) => {
   res.send(popupSuccess("zkpoll-telegram", { userId, username }))
 })
 
+// ─── EVM Signature Verification ──────────────────────────────────────────────
+
+// In-memory nonce store: address → { challenge, expiresAt }
+const evmChallenges = new Map<string, { challenge: string; expiresAt: number }>()
+
+// GET /auth/evm/challenge?address=0x...
+// Returns a signed challenge message for the given EVM address.
+app.get("/auth/evm/challenge", (req: Request, res: Response) => {
+  const address = (req.query.address as string)?.toLowerCase()
+  if (!address || !/^0x[0-9a-f]{40}$/i.test(address)) {
+    return res.status(400).json({ error: "Invalid address" })
+  }
+  const nonce = Math.random().toString(36).slice(2) + Date.now().toString(36)
+  const challenge = `Sign this message to verify your EVM wallet for ZKPoll.\n\nAddress: ${address}\nNonce: ${nonce}`
+  evmChallenges.set(address, { challenge, expiresAt: Date.now() + 5 * 60 * 1000 }) // 5 min TTL
+  res.json({ challenge })
+})
+
+// POST /auth/evm/verify
+// Verifies the signature and confirms the address owns the wallet.
+app.post("/auth/evm/verify", async (req: Request, res: Response) => {
+  const { address, challenge, signature } = req.body as {
+    address: string; challenge: string; signature: string
+  }
+  if (!address || !challenge || !signature) {
+    return res.status(400).json({ error: "Missing address, challenge, or signature" })
+  }
+
+  const stored = evmChallenges.get(address.toLowerCase())
+  if (!stored || stored.challenge !== challenge) {
+    return res.status(400).json({ error: "Invalid or expired challenge" })
+  }
+  if (Date.now() > stored.expiresAt) {
+    evmChallenges.delete(address.toLowerCase())
+    return res.status(400).json({ error: "Challenge expired" })
+  }
+
+  try {
+    // Recover signer from personal_sign (EIP-191 prefixed hash)
+    const { ethers } = await import("ethers")
+    const recovered = ethers.verifyMessage(challenge, signature)
+    const verified = recovered.toLowerCase() === address.toLowerCase()
+    if (verified) evmChallenges.delete(address.toLowerCase())
+    res.json({ verified })
+  } catch (e: any) {
+    res.status(400).json({ error: "Signature verification failed", detail: e.message })
+  }
+})
+
 // ─── Communities ──────────────────────────────────────────────────────────────
 
 function serializeCommunity(c: CommunityConfig) {
@@ -253,14 +302,60 @@ function serializeCommunity(c: CommunityConfig) {
 }
 
 // GET /communities — list all communities (for frontend browse)
-app.get("/communities", (_req, res) => {
+// Also backfills creator field from on-chain for any community missing it
+app.get("/communities", async (_req, res) => {
+  const communities = getAllCommunities()
+  const missing = communities.filter(c => !c.creator)
+
+  if (missing.length > 0) {
+    const NODE_URL = process.env.ALEO_NODE_URL ?? "https://api.explorer.provable.com/v1"
+    const NETWORK  = process.env.ALEO_NETWORK  ?? "testnet"
+    const FIELD_MODULUS = 8444461749428370424248824938781546531375899335154063827935233455917409239041n
+
+    await Promise.all(missing.map(async (community) => {
+      try {
+        const id = community.community_id
+        let h = /^\d+$/.test(id) ? BigInt(id) : 0n
+        if (h === 0n) for (let i = 0; i < id.length; i++) h = (h * 31n + BigInt(id.charCodeAt(i))) % FIELD_MODULUS
+        const r = await fetch(`${NODE_URL}/${NETWORK}/program/zkpoll_v2_core.aleo/mapping/communities/${h}field`)
+        if (r.ok) {
+          const raw = await r.text()
+          const m = raw.match(/creator:\s*(aleo1[a-z0-9]+)/)
+          if (m) { community.creator = m[1]; saveCommunityConfig(community) }
+        }
+      } catch { /* non-fatal */ }
+    }))
+  }
+
   res.json(getAllCommunities().map(serializeCommunity))
 })
 
 // GET /communities/:id — get a single community config
-app.get("/communities/:id", (req, res) => {
+app.get("/communities/:id", async (req, res) => {
   const community = getCommunityConfig(req.params.id)
   if (!community) return res.status(404).json({ error: "Community not found" })
+
+  // Backfill creator from on-chain if missing (communities created before this field was added)
+  if (!community.creator) {
+    try {
+      const FIELD_MODULUS = 8444461749428370424248824938781546531375899335154063827935233455917409239041n
+      const id = req.params.id
+      let h = /^\d+$/.test(id) ? BigInt(id) : 0n
+      if (h === 0n) for (let i = 0; i < id.length; i++) h = (h * 31n + BigInt(id.charCodeAt(i))) % FIELD_MODULUS
+      const NODE_URL = process.env.ALEO_NODE_URL ?? "https://api.explorer.provable.com/v1"
+      const NETWORK  = process.env.ALEO_NETWORK  ?? "testnet"
+      const res2 = await fetch(`${NODE_URL}/${NETWORK}/program/zkpoll_v2_core.aleo/mapping/communities/${h}field`)
+      if (res2.ok) {
+        const raw = await res2.text()
+        const m = raw.match(/creator:\s*(aleo1[a-z0-9]+)/)
+        if (m) {
+          community.creator = m[1]
+          saveCommunityConfig(community)
+        }
+      }
+    } catch { /* non-fatal */ }
+  }
+
   res.json(serializeCommunity(community))
 })
 
@@ -294,6 +389,14 @@ app.post("/communities/:id/polls", async (req: Request, res: Response) => {
   const poll = req.body as PollInfo
   if (!poll.poll_id || !poll.title) {
     return res.status(400).json({ error: "Missing poll_id or title" })
+  }
+
+  // Enforce creator-only poll registration
+  if (!poll.creator_address) {
+    return res.status(400).json({ error: "Missing creator_address" })
+  }
+  if (community.creator && community.creator !== poll.creator_address) {
+    return res.status(403).json({ error: "Only the community creator can create polls" })
   }
 
   // Stamp operator address so the frontend knows who to pass to cast_vote
@@ -450,6 +553,20 @@ app.post("/verify", async (req: Request, res: Response) => {
   }
 })
 
+// POST /polls/:pollId/vote-tx — called by frontend after cast_vote confirms
+// Persists the tx ID to the community JSON file so tally engine can fetch it
+app.post("/polls/:pollId/vote-tx", (req: Request, res: Response) => {
+  const { txId, communityId } = req.body as { txId: string; communityId: string }
+  if (!txId || !communityId) return res.status(400).json({ error: "txId and communityId required" })
+  const community = getCommunityConfig(communityId)
+  if (!community) return res.status(404).json({ error: "Community not found" })
+  const poll = community.polls?.find(p => p.poll_id === req.params.pollId)
+  if (!poll) return res.status(404).json({ error: "Poll not found" })
+  poll.vote_txids = [...new Set([...(poll.vote_txids ?? []), txId])]
+  saveCommunityConfig(community)
+  res.json({ ok: true })
+})
+
 // ─── Tally / Snapshot ────────────────────────────────────────────────────────
 
 // POST /polls/:id/snapshot
@@ -461,8 +578,28 @@ app.post("/operator/tally/:pollId", async (req: Request, res: Response) => {
   const { communityId, force = false } = req.body as { communityId: string; force?: boolean }
   if (!communityId) return res.status(400).json({ error: "communityId required" })
 
+  const community = getCommunityConfig(communityId)
+  if (!community) return res.status(404).json({ error: "Community not found" })
+
+  const poll = community.polls?.find(p => p.poll_id === req.params.pollId)
+  if (!poll) return res.status(404).json({ error: "Poll not found in community config" })
+
   try {
-    const result = await manualTally(req.params.pollId, communityId, !!force)
+    const result = await manualTally(req.params.pollId, communityId, poll, !!force)
+
+    // If force-published, persist updated scope_keys back to community config + re-pin to IPFS
+    if (force && result.txIds?.length) {
+      saveCommunityConfig(community)
+      if (isPinataConfigured()) {
+        try {
+          const cid = await pinJSON(community, `community-${communityId}`)
+          console.log(`[tally] Re-pinned community config with scope_keys: ${cid}`)
+        } catch (e: any) {
+          console.warn("[tally] Re-pin failed (non-fatal):", e.message)
+        }
+      }
+    }
+
     res.json(result)
   } catch (e: any) {
     res.status(500).json({ error: "Tally failed", detail: e.message })

@@ -76,9 +76,9 @@ export default function RequirementsPanel({
     try {
       // Step 1: get params from verifier (re-verifies requirements server-side)
       const res = await getCredentialParams(communityId, aleoAddress, connectedAccounts)
-      setResults(res.results)
 
       if (!res.passed) {
+        setResults(res.results)  // only show results on failure
         setStatus('error')
         setError('Requirements not met. Check the items above.')
         return
@@ -92,7 +92,7 @@ export default function RequirementsPanel({
         setStatus('issuing')
         try {
           const result = await executeTransaction({
-            program:    'zkpoll_core.aleo',
+            program:    'zkpoll_v2_core.aleo',
             function:   'issue_credential',
             fee:        60_000,   // microcredits
             privateFee: false,
@@ -162,6 +162,7 @@ export default function RequirementsPanel({
         setError('Credential issuance failed. Please try again.')
       }
     } catch (e: unknown) {
+      setResults(null)
       setError(e instanceof Error ? e.message : String(e))
       setStatus('error')
     } finally {

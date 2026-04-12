@@ -26,13 +26,9 @@ interface EnrichedVote {
 function VoteCard({
   vote,
   currentBlock,
-  onRecast,
-  recasting,
 }: {
   vote: EnrichedVote
   currentBlock: number
-  onRecast: (vote: EnrichedVote) => void
-  recasting: boolean
 }) {
   const { record, community, poll, credential, ev, vpPct, cv, daysLeft } = vote
   const vpColour  = vpTextColour(vpPct)
@@ -93,7 +89,7 @@ function VoteCard({
       {/* Deactivated warning */}
       {isDeactivated && (
         <div className="mx-5 mb-3 bg-red-50 border border-red-100 rounded-xl px-3 py-2 text-xs text-red-600 font-medium text-center">
-          Vote deactivated — recast to restore 100% VP
+          Vote deactivated — voting power has fully decayed
         </div>
       )}
 
@@ -122,22 +118,13 @@ function VoteCard({
             View Poll
           </Link>
         )}
-        {credential && (
-          <button
-            onClick={() => onRecast(vote)}
-            disabled={recasting}
-            className={`flex-1 py-2 text-xs font-medium rounded-xl transition-colors flex items-center justify-center gap-1.5
-              ${isDeactivated
-                ? 'bg-red-500 hover:bg-red-600 text-white shadow-sm'
-                : 'bg-white border border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50'}
-              disabled:opacity-60 disabled:cursor-not-allowed`}
+        {community && poll && (
+          <Link
+            to={`/communities/${community.community_id}/polls/${record.poll_id}/results`}
+            className="flex-1 py-2 text-xs font-medium text-center text-[#0070F3] bg-blue-50 border border-blue-100 rounded-xl hover:bg-blue-100 transition-colors"
           >
-            {recasting
-              ? <div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
-              : <span>↺</span>
-            }
-            {isDeactivated ? 'Recast to Restore' : 'Recast'}
-          </button>
+            View Results
+          </Link>
         )}
       </div>
     </div>

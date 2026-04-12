@@ -27,7 +27,7 @@ const HOW_IT_WORKS = [
   {
     step: '02',
     title: 'Rank your choices',
-    body: 'Use ranked-choice ballots with up to 8 options across hierarchical layers. Your rankings are private ZK witnesses — never exposed on-chain.',
+    body: 'Use ranked-choice ballots with up to 8 options across hierarchical layers. Your rankings are private ZK witnesses never exposed on-chain.',
     colour: 'bg-emerald-50 text-emerald-600 border-emerald-100',
   },
   {
@@ -39,7 +39,7 @@ const HOW_IT_WORKS = [
   {
     step: '04',
     title: 'Results are verifiable',
-    body: 'Tally snapshots are pinned to IPFS and anchored on-chain. Anyone can audit the result without learning individual votes.',
+    body: 'Tally snapshots are pinned to IPFS and anchored onchain. Anyone can audit the result without learning individual votes.',
     colour: 'bg-purple-50 text-purple-600 border-purple-100',
   },
 ]
@@ -122,8 +122,8 @@ export default function LandingPage() {
           {/* Three pillars */}
           <div className="mt-16 grid grid-cols-1 sm:grid-cols-3 gap-4 w-full text-left">
             {[
-              { icon: '🔒', title: 'Rankings are private', body: 'Your ballot is a ZK witness. It goes into the proof but never into calldata — not even the chain knows how you voted.' },
-              { icon: '⚖️', title: 'EV × VP% = CV', body: 'Eligible Votes reflect your stake. Voting Power decays over time. Counted Votes is the product — recast anytime to restore.' },
+              { icon: '🔒', title: 'Rankings are private', body: 'Your ballot is a ZK witness. It goes into the proof but never into calldata not even the chain knows how you voted.' },
+              { icon: '⚖️', title: 'EV × VP% = CV', body: 'Eligible Votes reflect your stake. Voting Power decays over time. Counted Votes is the product recast anytime to restore.' },
               { icon: '🌐', title: 'Verifiable results', body: 'Tally snapshots are pinned to IPFS and anchored on-chain. Audit the outcome without revealing individual votes.' },
             ].map(({ icon, title, body }) => (
               <div key={title} className="bg-gray-50 border border-gray-100 rounded-2xl p-5">
@@ -242,7 +242,7 @@ export default function LandingPage() {
             <div className="absolute -bottom-10 -left-10 w-64 h-64 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none" />
             <div className="relative z-10 flex flex-col items-center">
               <h2 className="text-3xl sm:text-4xl font-semibold text-white tracking-tight leading-tight mb-4">
-                Nobody — not even us —<br/>
+                Nobody not even us<br/>
                 <span className="text-[#0070F3]">can see how you voted.</span>
               </h2>
               <p className="text-gray-400 text-sm max-w-md leading-relaxed mb-10">

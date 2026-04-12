@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useCommunityStore } from '../store/communityStore'
+import { useAleoWallet } from '../hooks/useAleoWallet'
 
 const ICONS = [
   { bg: 'bg-blue-50 text-blue-600 border-blue-100',    icon: '◆' },
@@ -13,10 +14,12 @@ const ICONS = [
 
 export default function CommunityFeed() {
   const { communities, loading, error, fetchAll } = useCommunityStore()
+  const { address } = useAleoWallet()
   const [search, setSearch] = useState('')
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
+  const myCommunities = communities.filter(c => address && (!c.creator || c.creator === address))
   const filtered = communities.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||
     (c.description ?? '').toLowerCase().includes(search.toLowerCase())
@@ -50,6 +53,37 @@ export default function CommunityFeed() {
           New
         </Link>
       </div>
+
+      {/* My Communities */}
+      {myCommunities.length > 0 && (
+        <div className="mb-6">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">My Communities</p>
+          <div className="space-y-2">
+            {myCommunities.map((c, i) => {
+              const icon = ICONS[i % ICONS.length]
+              return (
+                <Link key={c.community_id} to={`/communities/${c.community_id}`}
+                  className="flex items-center justify-between p-3.5 border border-[#0070F3] rounded-xl hover:shadow-sm transition-all bg-blue-50 group">
+                  <div className="flex items-center gap-3.5">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 border ${icon.bg}`}>
+                      {c.logo ? <img src={c.logo} alt={c.name} className="w-full h-full rounded-full object-cover" /> : icon.icon}
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-gray-900 leading-tight">{c.name}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {(c.polls ?? []).length} poll{(c.polls ?? []).length !== 1 ? 's' : ''} · Owner
+                      </div>
+                    </div>
+                  </div>
+                  <svg className="w-4 h-4 text-[#0070F3]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </Link>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Search */}
       <div className="relative mb-5">

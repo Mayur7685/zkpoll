@@ -41,10 +41,16 @@ import { getUserToken, getUserMeta } from "./oauth.js"
 
 function getRpcUrl(chain: string): string {
   const urls: Record<string, string> = {
-    base:     "https://mainnet.base.org",
-    ethereum: "https://eth.llamarpc.com",
-    optimism: "https://mainnet.optimism.io",
-    arbitrum: "https://arb1.arbitrum.io/rpc",
+    // Mainnets
+    ethereum:          "https://eth.llamarpc.com",
+    base:              "https://mainnet.base.org",
+    optimism:          "https://mainnet.optimism.io",
+    arbitrum:          "https://arb1.arbitrum.io/rpc",
+    // Testnets
+    "ethereum-sepolia": "https://rpc.sepolia.org",
+    "base-sepolia":     "https://sepolia.base.org",
+    "arbitrum-sepolia": "https://sepolia-rollup.arbitrum.io/rpc",
+    "optimism-sepolia": "https://sepolia.optimism.io",
   }
   return urls[chain] ?? urls["ethereum"]
 }

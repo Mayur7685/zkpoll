@@ -31,6 +31,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         wallets={wallets}
         network={Network.TESTNET}
         decryptPermission={DecryptPermission.AutoDecrypt}
+        programs={['zkpoll_v2_core.aleo']}
         autoConnect
       >
         <WalletModalProvider network={Network.TESTNET}>

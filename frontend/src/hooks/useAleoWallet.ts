@@ -72,7 +72,7 @@ export function useAleoWallet() {
   const requestVoteRecords = useCallback(async (): Promise<VoteRecord[]> => {
     if (!connected || !requestRecords) return []
     try {
-      const raw: unknown[] = (await requestRecords('zkpoll_core.aleo', true)) ?? []
+      const raw: unknown[] = (await requestRecords('zkpoll_v2_core.aleo', true)) ?? []
       // Filter to Vote records only — they have 'rank_1'; Credential records have 'issued_at'
       const voteRaw = raw.filter((r) => {
         const rec = r as Record<string, unknown>
@@ -111,11 +111,11 @@ export function useAleoWallet() {
       return []
     }
     try {
-      // Credentials are issued by zkpoll_core.aleo::issue_credential — same program as cast_vote.
+      // Credentials are issued by zkpoll_v2_core.aleo::issue_credential — same program as cast_vote.
       // This ensures record commitments match (program-scoped in Aleo VM).
-      const raw: unknown[] = (await requestRecords('zkpoll_core.aleo', true)) ?? []
+      const raw: unknown[] = (await requestRecords('zkpoll_v2_core.aleo', true)) ?? []
 
-      // Filter to Credential records only (Vote records also live in zkpoll_core.aleo).
+      // Filter to Credential records only (Vote records also live in zkpoll_v2_core.aleo).
       // A Credential has 'issued_at'; a Vote has 'rank_1'. Use that to distinguish.
       const v2raw = raw.filter((r) => {
         const rec = r as Record<string, unknown>

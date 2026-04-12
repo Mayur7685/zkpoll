@@ -78,7 +78,7 @@ export default function CommunityDetail() {
             </div>
           </div>
           <Link
-            to="/create-poll"
+            to={`/create-poll?community=${community.community_id}`}
             className="shrink-0 flex items-center gap-1.5 text-xs font-medium bg-gray-900 text-white px-3.5 py-2 rounded-full hover:bg-gray-800 transition-colors"
           >
             <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -106,7 +106,7 @@ export default function CommunityDetail() {
           <div className="bg-white border border-gray-100 rounded-2xl p-8 text-center">
             <p className="text-sm text-gray-500 mb-4">No polls yet in this community.</p>
             <Link
-              to="/create-poll"
+              to={`/create-poll?community=${community.community_id}`}
               className="inline-flex items-center gap-1.5 bg-gray-900 text-white px-5 py-2.5 rounded-full text-sm font-medium hover:bg-gray-800 transition-colors"
             >
               Create first poll →

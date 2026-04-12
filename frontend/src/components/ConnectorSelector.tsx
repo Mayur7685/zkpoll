@@ -19,13 +19,15 @@ interface Props {
 
 type ConnectorType = 'EVM_WALLET' | 'X_TWITTER' | 'DISCORD' | 'GITHUB' | 'TELEGRAM'
 
-const CONNECTORS: { type: ConnectorType; icon: string; name: string; hint: string }[] = [
-  { type: 'EVM_WALLET', icon: '🦊', name: 'EVM Wallet',   hint: 'MetaMask, Coinbase, etc.' },
-  { type: 'X_TWITTER',  icon: '𝕏',  name: 'X / Twitter', hint: 'Required for follow checks' },
-  { type: 'DISCORD',    icon: '💬', name: 'Discord',      hint: 'Required for server/role checks' },
-  { type: 'GITHUB',     icon: '🐙', name: 'GitHub',       hint: 'Required for repo/commit checks' },
-  { type: 'TELEGRAM',   icon: '✈️', name: 'Telegram',     hint: 'Required for channel checks' },
+const CONNECTORS: ConnectorMeta[] = [
+  { type: 'EVM_WALLET', icon: '/MetaMask-icon-fox.svg',        name: 'EVM Wallet',   hint: 'MetaMask, Coinbase, etc.' },
+  { type: 'X_TWITTER',  icon: '/x-icon.svg',                  name: 'X / Twitter',  hint: 'Required for follow checks' },
+  { type: 'DISCORD',    icon: '/Discord-Symbol-Blurple.svg',   name: 'Discord',      hint: 'Required for server/role checks' },
+  { type: 'GITHUB',     icon: '/GitHub_Invertocat_Black.svg',  name: 'GitHub',       hint: 'Required for repo/commit checks' },
+  { type: 'TELEGRAM',   icon: '/telegram-icon.svg',            name: 'Telegram',     hint: 'Required for channel checks', beta: true },
 ]
+
+type ConnectorMeta = { type: ConnectorType; icon: string; name: string; hint: string; beta?: boolean }
 
 // Channel names must match what the verifier's popup HTML uses
 const CHANNELS: Partial<Record<ConnectorType, string>> = {
@@ -92,13 +94,40 @@ export default function ConnectorSelector({ accounts, onChange }: Props) {
     const eth = (window as any).ethereum
     if (!eth) { setEvmError('No injected wallet found. Install MetaMask.'); return }
     try {
+      setConnecting('EVM_WALLET')
       const [address] = await eth.request({ method: 'eth_requestAccounts' })
+
+      // Request a challenge from the verifier
+      const BASE = import.meta.env.VITE_VERIFIER_URL ?? '/api'
+      const { challenge } = await fetch(`${BASE}/auth/evm/challenge?address=${address}`)
+        .then(r => r.json()) as { challenge: string }
+
+      // Ask user to sign the challenge — proves they control the address
+      const signature = await eth.request({
+        method: 'personal_sign',
+        params: [challenge, address],
+      })
+
+      // Verify signature server-side
+      const { verified } = await fetch(`${BASE}/auth/evm/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address, challenge, signature }),
+      }).then(r => r.json()) as { verified: boolean }
+
+      if (!verified) throw new Error('Signature verification failed')
+
       onChange([
         ...accounts.filter(a => a.type !== 'EVM_WALLET'),
         { type: 'EVM_WALLET', identifier: address, displayName: `${address.slice(0, 6)}…${address.slice(-4)}` },
       ])
     } catch (e: unknown) {
-      setEvmError(e instanceof Error ? e.message : 'Connection rejected')
+      const msg = e instanceof Error ? e.message : String(e)
+      if (!msg.toLowerCase().includes('user rejected') && msg !== 'Popup closed') {
+        setEvmError(msg)
+      }
+    } finally {
+      setConnecting(null)
     }
   }
 
@@ -135,16 +164,25 @@ export default function ConnectorSelector({ accounts, onChange }: Props) {
     <div className="space-y-2">
       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Connected Accounts</p>
 
-      {CONNECTORS.map(({ type, icon, name, hint }) => {
+      {CONNECTORS.map(({ type, icon, name, hint, beta }) => {
         const account      = get(type)
         const isConnecting = connecting === type
 
         return (
           <div key={type} className="flex items-center justify-between p-3 bg-gray-50 border border-gray-100 rounded-xl">
             <div className="flex items-center gap-2.5">
-              <span className="text-base w-7 text-center leading-none">{icon}</span>
+              <div className="w-7 h-7 flex items-center justify-center shrink-0">
+                <img
+                  src={icon}
+                  alt={name}
+                  className={`w-5 h-5 object-contain ${type === 'X_TWITTER' ? 'invert' : ''}`}
+                />
+              </div>
               <div>
-                <div className="text-sm font-medium text-gray-800">{name}</div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm font-medium text-gray-800">{name}</span>
+                  {beta && <span className="text-[10px] bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-medium">Beta</span>}
+                </div>
                 <div className="text-xs text-gray-400 truncate max-w-[160px]">
                   {account ? (account.displayName ?? account.identifier) : hint}
                 </div>

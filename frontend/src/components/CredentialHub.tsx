@@ -176,7 +176,7 @@ export default function CredentialHub({ community }: Props) {
 
       setIssueStatus('issuing')
       const result = await executeTransaction({
-        program:    'zkpoll_core.aleo',
+        program:    'zkpoll_v2_core.aleo',
         function:   'issue_credential',
         fee:        60_000,
         privateFee: false,

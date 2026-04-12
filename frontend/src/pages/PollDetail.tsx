@@ -4,7 +4,7 @@ import { useAleoWallet } from '../hooks/useAleoWallet'
 import { useVoting } from '../hooks/useVoting'
 import { useCredentialHub } from '../hooks/useCredentialHub'
 import { useToast } from '../components/Toast'
-import { getPollMeta, getPollVoteCount, getLatestSnapshot } from '../lib/aleo'
+import { getPollMeta, getPollVoteCount, getAllScopedSnapshots } from '../lib/aleo'
 import { getCommunity } from '../lib/verifier'
 import { vpTextColour } from '../lib/decay'
 import LayerNavbar from '../components/LayerNavbar'
@@ -12,7 +12,7 @@ import type { BreadcrumbEntry } from '../components/LayerNavbar'
 import OptionLayer from '../components/OptionLayer'
 import VotingMode from '../components/VotingMode'
 import VoteConfirmModal from '../components/VoteConfirmModal'
-import type { Poll, PollOption, Snapshot, VoteRanking, CommunityConfig } from '../types'
+import type { Poll, PollOption, ScopedSnapshotMap, VoteRanking, CommunityConfig } from '../types'
 
 // ── EV / VP% / CV strip shown above the Submit button ────────────────────────
 function CredentialBar({ community }: { community: CommunityConfig }) {
@@ -95,7 +95,7 @@ export default function PollDetail() {
 
   const [poll, setPoll]             = useState<Poll | null>(null)
   const [community, setCommunity]   = useState<CommunityConfig | null>(null)
-  const [snapshot, setSnapshot]     = useState<Snapshot | null>(null)
+  const [snapshots, setSnapshots]   = useState<ScopedSnapshotMap>(new Map())
   const [pollLoading, setPollLoading] = useState(true)
   const [voteCount, setVoteCount]   = useState<number | null>(null)
 
@@ -115,10 +115,8 @@ export default function PollDetail() {
     Promise.all([
       getPollMeta(pollId),
       getCommunity(communityId),
-      getLatestSnapshot(pollId).catch(() => null),
       getPollVoteCount(pollId).catch(() => null),
-    ]).then(([meta, community, snap, votes]) => {
-      // Find the poll in the verifier backend (has real title + options)
+    ]).then(([meta, community, votes]) => {
       const backendPoll = community?.polls?.find(p => p.poll_id === pollId)
 
       if (!meta && !backendPoll) { setPollLoading(false); return }
@@ -133,17 +131,22 @@ export default function PollDetail() {
       setPoll({
         poll_id:                  pollId,
         community_id:             communityId,
-        // Prefer non-zero on-chain value, then backend poll value, then community config (authoritative),
-        // then fallback 1. Use || not ?? so that 0 (on-chain default) falls through.
         required_credential_type: meta?.required_credential_type || backendPoll?.required_credential_type || community?.credential_type || 1,
         created_at:               meta?.created_at ?? backendPoll?.created_at_block ?? 0,
         active:                   meta?.active ?? true,
         options,
+        poll_type:                backendPoll?.poll_type ?? 'flat',
+        operator_address:         backendPoll?.operator_address,
       })
 
       setCommunity(community ?? null)
-      setSnapshot(snap)
       setVoteCount(votes)
+
+      // Fetch scoped snapshots for all parent scopes if scope_keys available in metadata
+      const scopeKeys = backendPoll?.scope_keys ?? []
+      if (scopeKeys.length > 0) {
+        getAllScopedSnapshots(scopeKeys).then(setSnapshots).catch(() => {})
+      }
     }).finally(() => setPollLoading(false))
   }, [pollId, communityId])
 
@@ -305,6 +308,16 @@ export default function PollDetail() {
             </div>
           )}
 
+          {/* Hierarchical poll beta warning */}
+          {poll.poll_type === 'hierarchical' && (
+            <div className="mx-6 mb-4 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+              <span className="text-amber-500 shrink-0 mt-0.5">⚠️</span>
+              <p className="text-xs text-amber-700">
+                <strong>Experimental poll:</strong> This poll has sub-options. Ranking sub-options requires a separate vote transaction per layer. Root rankings are submitted first.
+              </p>
+            </div>
+          )}
+
           {/* No credential / sync delay prompt */}
           {noCredential && connected && (
             <div className="mx-6 mb-4 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 flex items-start gap-3">
@@ -348,7 +361,7 @@ export default function PollDetail() {
                   <OptionLayer
                     options={poll.options}
                     parentId={currentParentId}
-                    snapshot={snapshot}
+                    snapshots={snapshots}
                     onDrillIn={drillIn}
                   />
                 </div>
@@ -378,6 +391,12 @@ export default function PollDetail() {
                     onDrillIn={drillIn}
                   />
                 </div>
+                {breadcrumb.length > 1 && poll.poll_type === 'hierarchical' && (
+                  <div className="mx-3 mb-2 flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <span className="text-amber-500 text-xs shrink-0">⚠️</span>
+                    <p className="text-xs text-amber-700">Sub-option rankings require a separate vote transaction.</p>
+                  </div>
+                )}
                 {breadcrumb.length > 1 && (
                   <div className="px-3 pb-3">
                     <button

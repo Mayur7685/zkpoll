@@ -5,7 +5,9 @@ import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createCommunity } from '../lib/verifier'
 import { useAleoWallet } from '../hooks/useAleoWallet'
-import type { CommunityConfig, RequirementGroup, Requirement, RequirementType } from '../types'
+import { isCommunityRegistered } from '../lib/aleo'
+import { TransactionStatus } from '@provablehq/aleo-types'
+
 
 const FIELD_MODULUS = 8444461749428370424248824938781546531375899335154063827935233455917409239041n
 function fieldFromString(s: string): bigint {
@@ -70,15 +72,25 @@ function DetailsStep({ value, onChange }: { value: DetailsForm; onChange: (v: De
           onChange={e => set('logo', e.target.value)} />
       </div>
       <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className={labelCls}>Credential Type</label>
-          <select className={inputCls} value={value.credential_type}
-            onChange={e => set('credential_type', Number(e.target.value))}>
-            <option value={1}>Basic (1)</option>
-            <option value={2}>Verified (2)</option>
-            <option value={3}>Premium (3)</option>
-          </select>
+      <div>
+        <label className={labelCls}>Credential Type</label>
+        <div className="space-y-2">
+          {TIERS.map(tier => (
+            <button key={tier.value} type="button"
+              onClick={() => set('credential_type', tier.value)}
+              className={`w-full flex items-start gap-3 px-3.5 py-3 rounded-xl border text-left transition-colors ${
+                value.credential_type === tier.value
+                  ? 'border-[#0070F3] bg-blue-50'
+                  : 'border-gray-200 bg-gray-50 hover:border-gray-300'
+              }`}>
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border shrink-0 mt-0.5 ${tier.badge}`}>
+                {tier.label}
+              </span>
+              <span className="text-xs text-gray-500 leading-relaxed">{tier.desc}</span>
+            </button>
+          ))}
         </div>
+      </div>
         <div>
           <label className={labelCls}>Validity (days)</label>
           <input className={inputCls} type="number" min={1} value={value.credential_expiry_days}
@@ -108,7 +120,38 @@ function Field({ label, optional = false, children }: {
   )
 }
 
-// ── Step 2: Requirements builder ──────────────────────────────────────────────
+// ── Tier config ───────────────────────────────────────────────────────────────
+
+const TIERS = [
+  {
+    value: 1,
+    label: 'Open',
+    badge: 'bg-green-50 text-green-700 border-green-100',
+    desc: 'Anyone with an Aleo wallet can vote. No requirements.',
+    maxGroups: 0,
+    maxReqsPerGroup: 0,
+  },
+  {
+    value: 2,
+    label: 'Gated',
+    badge: 'bg-blue-50 text-blue-700 border-blue-100',
+    desc: 'One requirement group. Up to 3 requirements with AND/OR logic.',
+    maxGroups: 1,
+    maxReqsPerGroup: 3,
+  },
+  {
+    value: 3,
+    label: 'Multi-gate',
+    badge: 'bg-purple-50 text-purple-700 border-purple-100',
+    desc: 'Unlimited groups and requirements. Full Guild.xyz-style eligibility.',
+    maxGroups: Infinity,
+    maxReqsPerGroup: Infinity,
+  },
+] as const
+
+function getTier(credType: number) {
+  return TIERS.find(t => t.value === credType) ?? TIERS[0]
+}
 
 function RequirementEditor({ req, onChange, onRemove }: {
   req: Requirement; onChange: (r: Requirement) => void; onRemove: () => void
@@ -232,17 +275,45 @@ function RequirementEditor({ req, onChange, onRemove }: {
         </div>
       )}
       {req.type === 'TELEGRAM_MEMBER' && (
-        <Field label="Telegram chat / channel ID">
-          <input className={inputCls} placeholder="e.g. -1001234567890"
-            value={req.params.chatId ?? ''}
-            onChange={e => setParam('chatId', e.target.value)} />
-        </Field>
+        <>
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+            <span className="shrink-0">⚠️</span>
+            <span>Add <strong>@zkpollbot</strong> as an admin to your Telegram channel before using this requirement.</span>
+          </div>
+          <Field label="Telegram chat / channel ID">
+            <input className={inputCls} placeholder="e.g. -1001234567890"
+              value={req.params.chatId ?? ''}
+              onChange={e => setParam('chatId', e.target.value)} />
+          </Field>
+        </>
       )}
     </div>
   )
 }
 
-function RequirementsStep({ groups, onChange }: { groups: RequirementGroup[]; onChange: (g: RequirementGroup[]) => void }) {
+function RequirementsStep({ groups, onChange, credentialType }: {
+  groups: RequirementGroup[]
+  onChange: (g: RequirementGroup[]) => void
+  credentialType: number
+}) {
+  const tier = getTier(credentialType)
+
+  // Type 1 (Open) — no requirements, FREE is auto-applied
+  if (tier.maxGroups === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
+        <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center text-xl">✓</div>
+        <p className="text-sm font-semibold text-gray-900">No requirements needed</p>
+        <p className="text-xs text-gray-400 max-w-xs">
+          Open communities automatically grant credentials to anyone with an Aleo wallet. No verification required.
+        </p>
+      </div>
+    )
+  }
+
+  const canAddGroup = groups.length < tier.maxGroups
+  const canAddReq = (gi: number) => groups[gi].requirements.length < tier.maxReqsPerGroup
+
   const updateGroup = (i: number, patch: Partial<RequirementGroup>) => {
     const next = [...groups]; next[i] = { ...next[i], ...patch }; onChange(next)
   }
@@ -257,13 +328,16 @@ function RequirementsStep({ groups, onChange }: { groups: RequirementGroup[]; on
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5">
-        Groups use AND between them. Within each group choose AND / OR logic.
-      </p>
+      <div className={`flex items-start gap-2 px-3 py-2.5 rounded-xl border text-xs ${tier.badge}`}>
+        <span className="font-semibold shrink-0">{tier.label}:</span>
+        <span>{tier.desc}</span>
+      </div>
       {groups.map((group, gi) => (
         <div key={group.id} className="border border-gray-200 rounded-xl p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-gray-700">Group {gi + 1}</span>
+            <span className="text-sm font-semibold text-gray-700">
+              {tier.maxGroups === 1 ? 'Requirements' : `Group ${gi + 1}`}
+            </span>
             <div className="flex items-center gap-3">
               {(['AND','OR'] as const).map(l => (
                 <label key={l} className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
@@ -285,16 +359,25 @@ function RequirementsStep({ groups, onChange }: { groups: RequirementGroup[]; on
             <RequirementEditor key={req.id} req={req}
               onChange={r => updateReq(gi, ri, r)} onRemove={() => removeReq(gi, ri)} />
           ))}
-          <button onClick={() => updateGroup(gi, { requirements: [...group.requirements, newReq()] })}
-            className="text-sm font-medium text-[#0070F3] hover:underline">
-            + Add requirement
-          </button>
+          {canAddReq(gi) && (
+            <button onClick={() => updateGroup(gi, { requirements: [...group.requirements, newReq()] })}
+              className="text-sm font-medium text-[#0070F3] hover:underline">
+              + Add requirement
+              {tier.maxReqsPerGroup !== Infinity && (
+                <span className="text-gray-400 font-normal ml-1">
+                  ({group.requirements.length}/{tier.maxReqsPerGroup})
+                </span>
+              )}
+            </button>
+          )}
         </div>
       ))}
-      <button onClick={() => onChange([...groups, newGroup()])}
-        className="w-full py-2.5 border border-dashed border-gray-300 rounded-xl text-sm font-medium text-gray-500 hover:border-gray-400 hover:text-gray-700 transition-colors">
-        + Add group
-      </button>
+      {canAddGroup && (
+        <button onClick={() => onChange([...groups, newGroup()])}
+          className="w-full py-2.5 border border-dashed border-gray-300 rounded-xl text-sm font-medium text-gray-500 hover:border-gray-400 hover:text-gray-700 transition-colors">
+          + Add group
+        </button>
+      )}
     </div>
   )
 }
@@ -367,9 +450,11 @@ function WizardStepper({ step }: { step: number }) {
 
 export default function CreateCommunityWizard() {
   const navigate = useNavigate()
-  const { executeTransaction, connected } = useAleoWallet()
+  const { executeTransaction, transactionStatus, connected, address } = useAleoWallet()
   const [step, setStep]     = useState(0)
   const [saving, setSaving] = useState(false)
+  const [confirmingTx, setConfirmingTx] = useState(false)
+  const [createdTxId, setCreatedTxId] = useState<string | null>(null)
   const [error, setError]   = useState<string | null>(null)
 
   const [details, setDetails] = useState<DetailsForm>({
@@ -388,20 +473,21 @@ export default function CreateCommunityWizard() {
         community_id, name: details.name, description: details.description, logo: details.logo,
         credential_type: details.credential_type, credential_expiry_days: details.credential_expiry_days,
         requirement_groups: groups,
+        creator: address ?? undefined,
       }
 
-      // Step 1: save config to verifier (off-chain registry + IPFS pin)
-      const { ipfs_cid } = await createCommunity(config) as { community_id: string; ipfs_cid?: string }
+      // Check if community_id already registered on-chain — avoid wasting fee
+      const alreadyExists = await isCommunityRegistered(community_id).catch(() => false)
+      if (alreadyExists) throw new Error(`Community "${community_id}" is already registered on-chain. Choose a different name.`)
 
-      // Step 2: register community on-chain — user wallet pays gas, self.caller = creator
-      // config_hash = field derived from IPFS CID (or community_id as fallback)
-      const configHashSrc = ipfs_cid ?? community_id
+      // Step 1: register community on-chain FIRST — user wallet pays gas
+      // We derive a deterministic config_hash from community_id (IPFS pin happens after confirmation)
       const communityField = fieldFromString(community_id)
-      const configHashField = fieldFromString(configHashSrc)
-      await executeTransaction({
-        program:    'zkpoll_core.aleo',
+      const configHashField = fieldFromString(community_id) // placeholder until IPFS pin
+      const result = await executeTransaction({
+        program:    'zkpoll_v2_core.aleo',
         function:   'register_community',
-        fee:        20_000,
+        fee:        50_000,
         privateFee: false,
         inputs: [
           `${communityField}field`,
@@ -409,10 +495,76 @@ export default function CreateCommunityWizard() {
         ],
       })
 
-      navigate(`/communities/${community_id}`)
+      const walletTxId = result?.transactionId
+      if (!walletTxId) throw new Error('No transaction ID returned from wallet')
+      setCreatedTxId(walletTxId)
+
+      // Step 2: wait for on-chain confirmation, capture real txId
+      if (transactionStatus) {
+        setConfirmingTx(true)
+        let attempts = 0
+        await new Promise<void>((resolve, reject) => {
+          const interval = setInterval(async () => {
+            attempts++
+            try {
+              const res = await transactionStatus(walletTxId)
+              const s = res.status.toLowerCase()
+              const onChainId = (res as unknown as Record<string, unknown>).transactionId as string | undefined
+              if (s === TransactionStatus.ACCEPTED) {
+                clearInterval(interval)
+                if (onChainId) setCreatedTxId(onChainId)  // swap to real on-chain txId
+                resolve()
+              } else if (s === TransactionStatus.FAILED || s === TransactionStatus.REJECTED) {
+                clearInterval(interval); reject(new Error(res.error ?? 'Transaction rejected on-chain'))
+              } else if (attempts > 72) {
+                clearInterval(interval)
+                if (onChainId) setCreatedTxId(onChainId)
+                resolve()
+              }
+            } catch { /* network hiccup — retry */ }
+          }, 2_000)
+        })
+      }
+
+      // Step 3: only after confirmed — save config to verifier + pin to IPFS
+      await createCommunity(config)
+      setSaving(false)
+      setConfirmingTx(false)
+      // createdTxId is already set — success screen renders below
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e)); setSaving(false)
+      setError(e instanceof Error ? e.message : String(e))
+      setSaving(false)
+      setConfirmingTx(false)
     }
+  }
+
+  const community_id_slug = details.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+
+  if (createdTxId && !saving) {
+    return (
+      <div className="max-w-lg mx-auto w-full">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-8 py-10 flex flex-col items-center text-center gap-4">
+            <div className="w-16 h-16 rounded-full bg-[#10B981] flex items-center justify-center">
+              <svg className="w-8 h-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </div>
+            <h2 className="text-2xl font-semibold text-gray-900">Community Created!</h2>
+            <p className="text-sm text-gray-500 max-w-xs">Your community is registered on-chain and ready to use.</p>
+            <a href={`https://testnet.explorer.provable.com/transaction/${createdTxId}`}
+              target="_blank" rel="noopener noreferrer"
+              className="text-sm font-medium text-[#0070F3] hover:underline">
+              View transaction ↗
+            </a>
+            <button onClick={() => navigate(`/communities/${community_id_slug}`)}
+              className="mt-2 bg-[#0070F3] text-white px-6 py-3 rounded-xl text-sm font-medium hover:bg-blue-600 transition-colors shadow-sm">
+              Go to Community →
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   const progress = ((step + 1) / STEPS.length) * 100
@@ -433,8 +585,16 @@ export default function CreateCommunityWizard() {
 
         {/* Scrollable content — min-h-0 is required for flex children to scroll */}
         <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-8 py-4">
-          {step === 0 && <DetailsStep value={details} onChange={setDetails} />}
-          {step === 1 && <RequirementsStep groups={groups} onChange={setGroups} />}
+          {step === 0 && <DetailsStep value={details} onChange={d => {
+            if (d.credential_type === 1 && details.credential_type !== 1) {
+              setGroups([{ id: crypto.randomUUID(), logic: 'AND', requirements: [{ id: crypto.randomUUID(), type: 'FREE', params: {} }] }])
+            }
+            if (d.credential_type !== 1 && details.credential_type === 1) {
+              setGroups([newGroup()])
+            }
+            setDetails(d)
+          }} />}
+          {step === 1 && <RequirementsStep groups={groups} onChange={setGroups} credentialType={details.credential_type} />}
           {step === 2 && <ReviewStep details={details} groups={groups} />}
 
           {error && (
@@ -469,7 +629,7 @@ export default function CreateCommunityWizard() {
               ) : (
                 <button onClick={() => void handleCreate()} disabled={saving || !connected}
                   className="flex-1 py-3.5 bg-[#0070F3] hover:bg-blue-600 text-white font-medium rounded-xl text-sm transition-colors shadow-sm disabled:opacity-60">
-                  {saving ? 'Creating…' : !connected ? 'Connect Wallet' : 'Create Community'}
+                  {confirmingTx ? 'Confirming on-chain…' : saving ? 'Creating…' : !connected ? 'Connect Wallet' : 'Create Community'}
                 </button>
               )}
             </div>

@@ -2,10 +2,11 @@
 // Logic unchanged: 3 steps (Setup → Options → Deploy), sequential wallet txs.
 
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAleoWallet } from '../hooks/useAleoWallet'
+import { TransactionStatus } from '@provablehq/aleo-types'
 import { getBlockHeight } from '../lib/aleo'
-import { listCommunities, registerPoll } from '../lib/verifier'
+import { listCommunities, getCommunity, registerPoll } from '../lib/verifier'
 import type { CommunityConfig, PollOptionInfo } from '../types'
 
 const FIELD_MODULUS = 8444461749428370424248824938781546531375899335154063827935233455917409239041n
@@ -81,17 +82,20 @@ function WizardStepper({ step }: { step: number }) {
 
 export default function CreatePollWizard() {
   const navigate = useNavigate()
-  const { executeTransaction, connected, address } = useAleoWallet()
+  const [searchParams] = useSearchParams()
+  const { executeTransaction, transactionStatus, connected, address } = useAleoWallet()
   const [step, setStep] = useState(1)
   const [communities, setCommunities] = useState<CommunityConfig[]>([])
   const [nextDraftId, setNextDraftId] = useState(1)
 
   // Step 1
+  const [notCreator, setNotCreator]           = useState(false)
   const [communityId, setCommunityId]         = useState('')
   const [title, setTitle]                     = useState('')
   const [description, setDescription]         = useState('')
   const [requiredCredType, setRequiredCredType] = useState(1)
-  const [durationDays, setDurationDays]       = useState(7)  // poll deadline in days
+  const [durationDays, setDurationDays]       = useState(7)
+  const [pollType, setPollType]               = useState<'flat' | 'hierarchical'>('flat')
 
   // Step 2
   const [options, setOptions] = useState<OptionDraft[]>([])
@@ -101,11 +105,45 @@ export default function CreatePollWizard() {
   const [deployMessage, setDeployMessage] = useState('')
   const [deployError, setDeployError]     = useState('')
   const [createdPollId, setCreatedPollId] = useState('')
+  const [createdPollTxId, setCreatedPollTxId] = useState('')
 
   useEffect(() => { listCommunities().then(setCommunities).catch(() => null) }, [])
 
+  useEffect(() => {
+    setNotCreator(false)
+    setCommunityId('')
+  }, [address])
+
+  useEffect(() => {
+    const preselect = searchParams.get('community')
+    if (preselect && communities.length > 0 && !communityId) {
+      const c = communities.find(c => c.community_id === preselect)
+      if (c) { setCommunityId(preselect); setRequiredCredType(c.credential_type) }
+    }
+  }, [communities, searchParams])
+
   // Option helpers
+  // zkpoll_v2_core limits:
+  //   - max 8 options per parent (cast_vote has r1..r8 rank slots)
+  //   - max depth 4 (depth 0 = root, depth 3 = deepest sub-option)
+  const MAX_OPTIONS_PER_PARENT = 8
+  const MAX_DEPTH = 3  // 0-indexed: root=0, sub=1, sub-sub=2, deepest=3
+
+  function getDepth(draftId: number): number {
+    let depth = 0
+    let current = options.find(o => o.draftId === draftId)
+    while (current && current.parentDraftId !== 0) {
+      depth++
+      current = options.find(o => o.draftId === current!.parentDraftId)
+    }
+    return depth
+  }
+
   function addOption(parentDraftId = 0) {
+    const siblingsCount = options.filter(o => o.parentDraftId === parentDraftId).length
+    if (siblingsCount >= MAX_OPTIONS_PER_PARENT) return
+    const parentDepth = parentDraftId === 0 ? -1 : getDepth(parentDraftId)
+    if (parentDepth >= MAX_DEPTH) return
     setOptions(prev => [...prev, { draftId: nextDraftId, label: '', parentDraftId }])
     setNextDraftId(n => n + 1)
   }
@@ -124,36 +162,42 @@ export default function CreatePollWizard() {
   }
 
   function renderOptions(parentDraftId: number, depth = 0): React.ReactNode {
-    return options.filter(o => o.parentDraftId === parentDraftId).map(opt => (
-      <div key={opt.draftId} style={{ marginLeft: depth * 16 }}>
-        <div className="flex items-center gap-2 mb-2">
-          {depth > 0 && <div className="w-4 h-px bg-gray-200 shrink-0" />}
-          <input
-            className={inputCls}
-            placeholder={depth === 0 ? 'Root option label' : 'Sub-option label'}
-            value={opt.label}
-            onChange={e => updateOption(opt.draftId, e.target.value)}
-          />
-          <button
-            onClick={() => addOption(opt.draftId)}
-            className="shrink-0 text-xs text-[#0070F3] hover:underline font-medium whitespace-nowrap"
-            title="Add sub-option"
-          >
-            + Sub
-          </button>
-          <button
-            onClick={() => removeOption(opt.draftId)}
-            className="shrink-0 text-gray-400 hover:text-red-500 transition-colors text-sm"
-          >
-            ✕
-          </button>
+    return options.filter(o => o.parentDraftId === parentDraftId).map(opt => {
+      const childCount = options.filter(o => o.parentDraftId === opt.draftId).length
+      const canAddSub = pollType === 'hierarchical' && childCount < MAX_OPTIONS_PER_PARENT && depth < MAX_DEPTH
+      return (
+        <div key={opt.draftId} style={{ marginLeft: depth * 16 }}>
+          <div className="flex items-center gap-2 mb-2">
+            {depth > 0 && <div className="w-4 h-px bg-gray-200 shrink-0" />}
+            <input
+              className={inputCls}
+              placeholder={depth === 0 ? 'Root option label' : 'Sub-option label'}
+              value={opt.label}
+              onChange={e => updateOption(opt.draftId, e.target.value)}
+            />
+            {canAddSub && (
+              <button
+                onClick={() => addOption(opt.draftId)}
+                className="shrink-0 text-xs text-[#0070F3] hover:underline font-medium whitespace-nowrap"
+                title="Add sub-option"
+              >
+                + Sub
+              </button>
+            )}
+            <button
+              onClick={() => removeOption(opt.draftId)}
+              className="shrink-0 text-gray-400 hover:text-red-500 transition-colors text-sm"
+            >
+              ✕
+            </button>
+          </div>
+          {renderOptions(opt.draftId, depth + 1)}
         </div>
-        {renderOptions(opt.draftId, depth + 1)}
-      </div>
-    ))
+      )
+    })
   }
 
-  const step1Valid = communityId.trim() !== '' && title.trim() !== ''
+  const step1Valid = communityId.trim() !== '' && title.trim() !== '' && !notCreator
   const step2Valid = options.length >= 2 && options.every(o => o.label.trim() !== '')
 
   async function handleDeploy() {
@@ -175,8 +219,8 @@ export default function CreatePollWizard() {
 
       // Tx 1: create poll on-chain — user wallet is self.caller, must match community.creator
       setDeployMessage('Creating poll on-chain… (wallet signature required)')
-      await executeTransaction({
-        program:    'zkpoll_core.aleo',
+      const pollTxResult = await executeTransaction({
+        program:    'zkpoll_v2_core.aleo',
         function:   'create_poll',
         fee:        20_000,
         privateFee: false,
@@ -189,13 +233,45 @@ export default function CreatePollWizard() {
           operator,
         ],
       })
+      if (pollTxResult?.transactionId) setCreatedPollTxId(pollTxResult.transactionId)
+
+      // Wait for on-chain confirmation + swap to real txId
+      if (transactionStatus && pollTxResult?.transactionId) {
+        setDeployMessage('Waiting for on-chain confirmation…')
+        const walletTxId = pollTxResult.transactionId
+        let attempts = 0
+        await new Promise<void>((resolve, reject) => {
+          const interval = setInterval(async () => {
+            attempts++
+            try {
+              const res = await transactionStatus(walletTxId)
+              const s = res.status.toLowerCase()
+              const onChainId = (res as unknown as Record<string, unknown>).transactionId as string | undefined
+              if (s === TransactionStatus.ACCEPTED) {
+                clearInterval(interval)
+                if (onChainId) setCreatedPollTxId(onChainId)
+                resolve()
+              } else if (s === TransactionStatus.FAILED || s === TransactionStatus.REJECTED) {
+                clearInterval(interval)
+                if (onChainId) setCreatedPollTxId(onChainId)
+                reject(new Error(res.error ?? 'Transaction rejected on-chain'))
+              } else if (attempts > 72) {
+                clearInterval(interval)
+                if (onChainId) setCreatedPollTxId(onChainId)
+                resolve()
+              }
+            } catch { /* retry */ }
+          }, 2_000)
+        })
+      }
 
       // Off-chain: save title, description, options to verifier (+ IPFS pin)
       setDeployStatus('registering'); setDeployMessage('Saving poll metadata…')
       await registerPoll(communityId, {
         poll_id: pollIdStr, title, description: description.trim() || undefined,
         required_credential_type: requiredCredType, created_at_block: blockHeight,
-        end_block: endBlock, options: optionList,
+        end_block: endBlock, options: optionList, poll_type: pollType,
+        creator_address: address,
       })
 
       setCreatedPollId(pollIdStr)
@@ -229,16 +305,34 @@ export default function CreatePollWizard() {
               <div>
                 <label className={labelCls}>Community *</label>
                 <select className={inputCls} value={communityId}
-                  onChange={e => {
-                    setCommunityId(e.target.value)
-                    const c = communities.find(c => c.community_id === e.target.value)
-                    if (c) setRequiredCredType(c.credential_type)
+                  onChange={async e => {
+                    const id = e.target.value
+                    setCommunityId(id)
+                    setNotCreator(false)
+                    if (!id) return
+                    const c = communities.find(c => c.community_id === id)
+                    if (c) {
+                      setRequiredCredType(c.credential_type)
+                      // Sync check from already-loaded list
+                      if (c.creator && c.creator !== address) { setNotCreator(true); return }
+                    }
+                    // Async re-check with on-chain backfilled data
+                    try {
+                      const fresh = await getCommunity(id)
+                      if (fresh.creator && fresh.creator !== address) setNotCreator(true)
+                    } catch { /* non-fatal */ }
                   }}>
                   <option value="">— Select community —</option>
                   {communities.map(c => (
                     <option key={c.community_id} value={c.community_id}>{c.name}</option>
                   ))}
                 </select>
+                {address && !notCreator && communities.filter(c => !c.creator || c.creator === address).length === 0 && (
+                  <p className="text-xs text-amber-600 mt-1">You haven't created any communities yet.</p>
+                )}
+                {notCreator && (
+                  <p className="text-xs text-red-500 mt-1">You are not the creator of this community and cannot create polls in it.</p>
+                )}
               </div>
               <div>
                 <label className={labelCls}>Poll Title *</label>
@@ -289,23 +383,60 @@ export default function CreatePollWizard() {
                   Enforced on-chain — votes rejected after this deadline.
                 </p>
               </div>
+
+              {/* Poll type selector */}
+              <div>
+                <label className={labelCls}>Poll Type</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { value: 'flat', label: 'Flat', desc: 'Root options only. Single vote tx.', icon: '▤' },
+                    { value: 'hierarchical', label: 'Hierarchical', desc: 'Root + sub-options. Experimental.', icon: '▦' },
+                  ] as const).map(({ value, label, desc, icon }) => (
+                    <button key={value} type="button" onClick={() => setPollType(value)}
+                      className={`flex flex-col items-start gap-1 px-3.5 py-3 rounded-xl border text-left transition-colors ${
+                        pollType === value
+                          ? 'border-[#0070F3] bg-blue-50'
+                          : 'border-gray-200 bg-gray-50 hover:border-gray-300'
+                      }`}>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-base">{icon}</span>
+                        <span className="text-sm font-semibold text-gray-900">{label}</span>
+                        {value === 'hierarchical' && (
+                          <span className="text-[10px] bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-medium">Beta</span>
+                        )}
+                      </div>
+                      <span className="text-xs text-gray-400">{desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
           {/* Step 2 */}
           {step === 2 && (
             <div className="space-y-4">
-              <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5">
-                Add root options and sub-options. Voters rank options at each layer.
-              </p>
+              {pollType === 'hierarchical' ? (
+                <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                  <span className="text-amber-500 shrink-0 mt-0.5">⚠️</span>
+                  <p className="text-xs text-amber-700">
+                    <strong>Experimental:</strong> Hierarchical polls require multiple wallet signatures — one per layer ranked. Sub-option rankings are cast as separate transactions.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5">
+                  Add up to 8 root options. Voters rank them in a single transaction.
+                </p>
+              )}
               <div className="space-y-1">
                 {renderOptions(0)}
               </div>
               <button
                 onClick={() => addOption(0)}
-                className="w-full py-2.5 border border-dashed border-gray-300 rounded-xl text-sm font-medium text-gray-500 hover:border-[#0070F3] hover:text-[#0070F3] transition-colors"
+                disabled={options.filter(o => o.parentDraftId === 0).length >= MAX_OPTIONS_PER_PARENT}
+                className="w-full py-2.5 border border-dashed border-gray-300 rounded-xl text-sm font-medium text-gray-500 hover:border-[#0070F3] hover:text-[#0070F3] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-gray-300 disabled:hover:text-gray-500"
               >
-                + Add Root Option
+                + Add Root Option {options.filter(o => o.parentDraftId === 0).length >= MAX_OPTIONS_PER_PARENT ? `(max ${MAX_OPTIONS_PER_PARENT})` : ''}
               </button>
               {options.length < 2 && options.length > 0 && (
                 <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
@@ -401,6 +532,13 @@ export default function CreatePollWizard() {
                     <p className="font-semibold text-gray-900">Poll created!</p>
                     <p className="text-xs text-gray-500 mt-1">ID: {createdPollId.slice(0, 20)}…</p>
                   </div>
+                  {createdPollTxId && (
+                    <a href={`https://testnet.explorer.provable.com/transaction/${createdPollTxId}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="text-sm font-medium text-[#0070F3] hover:underline">
+                      View transaction ↗
+                    </a>
+                  )}
                   <button
                     onClick={() => navigate(`/communities/${communityId}/polls/${createdPollId}`)}
                     className="bg-gray-900 text-white px-5 py-2.5 rounded-full text-sm font-medium hover:bg-gray-800 transition-colors"

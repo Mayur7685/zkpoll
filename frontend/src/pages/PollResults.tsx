@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useAleoWallet } from '../hooks/useAleoWallet'
 import { useVoteHistory } from '../hooks/useVoteHistory'
-import { getPollMeta, getLatestSnapshot } from '../lib/aleo'
+import { getPollMeta, getAllScopedSnapshots } from '../lib/aleo'
 import { getCommunity } from '../lib/verifier'
-import type { PollMeta, Snapshot, PollOption } from '../types'
+import type { PollMeta, ScopedSnapshot, ScopedSnapshotMap, PollOption } from '../types'
 
 function decayScore(rank: number): number { return rank > 0 ? 1 / rank : 0 }
 
@@ -12,33 +12,27 @@ function optionLabel(optionId: number, options: PollOption[]): string {
   return options.find(o => o.option_id === optionId)?.label ?? `Option ${optionId}`
 }
 
-function RankedList({ snapshot, options }: { snapshot: Snapshot; options: PollOption[] }) {
-  const ranked = (['rank_1_option','rank_2_option','rank_3_option','rank_4_option',
-    'rank_5_option','rank_6_option','rank_7_option','rank_8_option'] as (keyof Snapshot)[])
-    .map((field, idx) => {
-      const optionId = snapshot[field] as number
-      return { rank: idx + 1, optionId, label: optionLabel(optionId, options) }
-    })
+function ScopedRankedList({ snap, options }: { snap: ScopedSnapshot; options: PollOption[] }) {
+  const ranked = [snap.rank_1_option, snap.rank_2_option, snap.rank_3_option, snap.rank_4_option]
+    .map((optionId, idx) => ({ rank: idx + 1, optionId, label: optionLabel(optionId, options) }))
     .filter(r => r.optionId > 0)
 
-  if (ranked.length === 0) return <p className="text-sm text-gray-400 text-center py-4">No results yet.</p>
+  if (ranked.length === 0) return <p className="text-sm text-gray-400 text-center py-2">No results yet.</p>
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {ranked.map(({ rank, optionId, label }) => {
         const score = decayScore(rank)
         const pct   = (score / decayScore(1)) * 100
-        const color = rank === 1 ? '#10B981' : rank <= 3 ? '#0070F3' : '#9ca3af'
+        const color = rank === 1 ? '#10B981' : rank <= 2 ? '#0070F3' : '#9ca3af'
         return (
           <div key={optionId} className="flex items-center gap-3">
-            <span className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 text-white"
-              style={{ background: color }}>
-              {rank}
-            </span>
+            <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 text-white"
+              style={{ background: color }}>{rank}</span>
             <div className="flex-1">
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center justify-between mb-0.5">
                 <span className="text-sm font-medium text-gray-900">{label}</span>
-                <span className="text-xs text-gray-400 font-medium">{score.toFixed(2)}×</span>
+                <span className="text-xs text-gray-400">{score.toFixed(2)}×</span>
               </div>
               <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
@@ -51,14 +45,68 @@ function RankedList({ snapshot, options }: { snapshot: Snapshot; options: PollOp
   )
 }
 
+function ScopedResultsTree({
+  snapshots, options, parentId = 0, depth = 0
+}: {
+  snapshots: ScopedSnapshotMap
+  options: PollOption[]
+  parentId?: number
+  depth?: number
+}) {
+  const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  const snap = snapshots.get(parentId)
+  const children = options.filter(o => o.parent_option_id === parentId)
+
+  if (children.length === 0) return null
+
+  return (
+    <div className={depth > 0 ? 'ml-4 border-l border-gray-100 pl-3 mt-2' : ''}>
+      {snap && (
+        <div className="mb-3">
+          <p className="text-xs text-gray-400 mb-1.5">
+            {parentId === 0 ? 'Root ranking' : `Under: ${optionLabel(parentId, options)}`}
+            {' · '}{snap.total_votes} vote{snap.total_votes !== 1 ? 's' : ''}
+          </p>
+          <ScopedRankedList snap={snap} options={options} />
+        </div>
+      )}
+      {children.filter(c => c.child_count > 0).map(child => (
+        <div key={child.option_id}>
+          <button
+            onClick={() => setExpanded(prev => {
+              const next = new Set(prev)
+              next.has(child.option_id) ? next.delete(child.option_id) : next.add(child.option_id)
+              return next
+            })}
+            className="flex items-center gap-1.5 text-xs text-[#0070F3] font-medium hover:underline mt-2"
+          >
+            <svg className={`w-3 h-3 transition-transform ${expanded.has(child.option_id) ? 'rotate-90' : ''}`}
+              viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            {child.label} ({child.child_count} sub)
+          </button>
+          {expanded.has(child.option_id) && (
+            <ScopedResultsTree
+              snapshots={snapshots} options={options}
+              parentId={child.option_id} depth={depth + 1}
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function PollResults() {
   const { communityId, pollId } = useParams<{ communityId: string; pollId: string }>()
   const { connected } = useAleoWallet()
   const { forPoll } = useVoteHistory()
 
   const [meta, setMeta] = useState<PollMeta | null>(null)
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const [snapshots, setSnapshots] = useState<ScopedSnapshotMap>(new Map())
   const [options, setOptions] = useState<PollOption[]>([])
+  const [pollTitle, setPollTitle] = useState('')
   const [loading, setLoading] = useState(true)
   const [noSnapshot, setNoSnapshot] = useState(false)
 
@@ -67,11 +115,20 @@ export default function PollResults() {
     setLoading(true)
     Promise.all([
       getPollMeta(pollId).then(setMeta),
-      getLatestSnapshot(pollId).then(snap => { if (!snap) setNoSnapshot(true); else setSnapshot(snap) }),
       getCommunity(communityId).then(c => {
         const poll = c.polls?.find(p => p.poll_id === pollId)
         if (poll?.options) setOptions(poll.options)
-      }).catch(() => {}),
+        if (poll?.title) setPollTitle(poll.title)
+        const scopeKeys = poll?.scope_keys ?? []
+        if (scopeKeys.length > 0) {
+          return getAllScopedSnapshots(scopeKeys).then(snaps => {
+            if (snaps.size === 0) setNoSnapshot(true)
+            else setSnapshots(snaps)
+          })
+        } else {
+          setNoSnapshot(true)
+        }
+      }).catch(() => { setNoSnapshot(true) }),
     ]).finally(() => setLoading(false))
   }, [pollId, communityId])
 
@@ -79,11 +136,8 @@ export default function PollResults() {
 
   return (
     <div className="max-w-lg mx-auto w-full">
-      {/* Back */}
-      <Link
-        to={`/communities/${communityId}/polls/${pollId}`}
-        className="inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-900 mb-4 transition-colors group"
-      >
+      <Link to={`/communities/${communityId}/polls/${pollId}`}
+        className="inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-900 mb-4 transition-colors group">
         <svg className="w-4 h-4 mr-1 group-hover:-translate-x-0.5 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
           <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
@@ -97,11 +151,10 @@ export default function PollResults() {
         </div>
       ) : (
         <div className="space-y-4">
-          {/* Header card */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-xl font-semibold text-gray-900">Results</h1>
+                <h1 className="text-xl font-semibold text-gray-900">{pollTitle || 'Results'}</h1>
                 {meta && (
                   <p className="text-xs text-gray-400 mt-0.5">
                     Block {meta.created_at} · {meta.active ? 'Active' : 'Closed'}
@@ -112,7 +165,6 @@ export default function PollResults() {
             </div>
           </div>
 
-          {/* Tally snapshot */}
           {noSnapshot ? (
             <div className="border-[1.5px] border-[#0070F3] rounded-xl overflow-hidden bg-white shadow-sm">
               <div className="p-6 text-center">
@@ -126,28 +178,21 @@ export default function PollResults() {
                 Snapshots are published on-chain by the tally operator. Check back later.
               </div>
             </div>
-          ) : snapshot && (
+          ) : (
             <div className="border-[1.5px] border-[#0070F3] rounded-xl overflow-hidden bg-white shadow-sm">
               <div className="px-5 py-4 border-b border-gray-100">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-gray-900">Latest Tally</h2>
-                  <div className="flex items-center gap-3 text-xs text-gray-400">
-                    <span>{snapshot.total_votes} vote{snapshot.total_votes !== 1 ? 's' : ''}</span>
-                    <span>Block {snapshot.block_height}</span>
-                    <span>Snapshot #{snapshot.snapshot_id}</span>
-                  </div>
-                </div>
+                <h2 className="text-sm font-semibold text-gray-900">Latest Tally</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Per-parent ranked results · MDCT decay scoring</p>
               </div>
               <div className="p-5">
-                <RankedList snapshot={snapshot} options={options} />
+                <ScopedResultsTree snapshots={snapshots} options={options} />
               </div>
               <div className="bg-[#0070F3] text-white px-5 py-3.5 text-sm font-medium">
-                Rankings use MDCT decay-weighted scoring (1/rank). Computed from encrypted ballots.
+                Rankings are independent per parent. Expand sub-options to see nested results.
               </div>
             </div>
           )}
 
-          {/* My votes */}
           {connected && myVotes.length > 0 && (
             <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5">
               <h2 className="text-sm font-semibold text-gray-900 mb-3">Your Votes</h2>

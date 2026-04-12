@@ -1,0 +1,9 @@
+{
+  "program": "zkpoll_v2_core.aleo",
+  "version": "0.1.0",
+  "description": "ZKPoll v2 core contract — adds per-parent scoped snapshots for independent sub-option ranking at each depth level.",
+  "license": "MIT",
+  "leo": "4.0.0",
+  "dependencies": null,
+  "dev_dependencies": null
+}

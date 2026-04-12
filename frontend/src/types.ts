@@ -59,9 +59,12 @@ export interface PollInfo {
   required_credential_type: number
   created_at_block: number
   end_block?: number
-  operator_address?: string  // Aleo address of tally operator — needed for cast_vote
+  operator_address?: string
   options: PollOptionInfo[]
-  ipfs_cid?: string   // IPFS CID of full poll metadata (set by verifier on registration)
+  ipfs_cid?: string
+  poll_type?: 'flat' | 'hierarchical'  // flat = root only (production), hierarchical = with sub-options (experimental)
+  scope_keys?: Array<{ parentOptionId: number; scopeKey: string }>
+  creator_address?: string  // wallet address of poll creator — verified server-side
 }
 
 export interface CommunityConfig {
@@ -73,6 +76,7 @@ export interface CommunityConfig {
   credential_expiry_days: number
   requirement_groups: RequirementGroup[]
   polls?: PollInfo[]
+  creator?: string  // Aleo address of community creator — set at creation time
 }
 
 // ─── Connected accounts ───────────────────────────────────────────────────────
@@ -95,14 +99,15 @@ export interface PollOption {
 }
 
 export interface Poll {
-  poll_id: string         // field value as hex string
+  poll_id: string
   community_id: string
   required_credential_type: number
-  created_at: number      // block height
+  created_at: number
   active: boolean
   options: PollOption[]
   vote_count?: number
   operator_address?: string
+  poll_type?: 'flat' | 'hierarchical'
 }
 
 // ─── Vote state ───────────────────────────────────────────────────────────────
@@ -153,6 +158,26 @@ export interface Snapshot {
   rank_7_option: number
   rank_8_option: number
 }
+
+// V2: per-parent scoped snapshot (zkpoll_v2_core.aleo)
+export interface ScopedSnapshot {
+  snapshot_id:      number
+  poll_id:          string
+  community_id:     string
+  parent_option_id: number   // 0 = root level
+  block_height:     number
+  total_votes:      number
+  rank_1_option:    number
+  rank_2_option:    number
+  rank_3_option:    number
+  rank_4_option:    number
+}
+
+// Map of parentOptionId → ScopedSnapshot
+export type ScopedSnapshotMap = Map<number, ScopedSnapshot>
+
+// Rankings scoped per parent: parentOptionId → { optionId → rank }
+export type ScopedVoteRanking = Map<number, VoteRanking>
 
 // Private Vote record from zkpoll_vote2.aleo / zkpoll_vote_v2.aleo (read from wallet)
 export interface VoteRecord {

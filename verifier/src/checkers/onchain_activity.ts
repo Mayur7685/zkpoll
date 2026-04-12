@@ -30,20 +30,28 @@ export async function checkOnchainActivity(
 
 function chainToAlchemyUrl(chain: string, key: string): string {
   const map: Record<string, string> = {
-    base:     `https://base-mainnet.g.alchemy.com/v2/${key}`,
-    ethereum: `https://eth-mainnet.g.alchemy.com/v2/${key}`,
-    optimism: `https://opt-mainnet.g.alchemy.com/v2/${key}`,
-    arbitrum: `https://arb-mainnet.g.alchemy.com/v2/${key}`,
+    ethereum:           `https://eth-mainnet.g.alchemy.com/v2/${key}`,
+    base:               `https://base-mainnet.g.alchemy.com/v2/${key}`,
+    optimism:           `https://opt-mainnet.g.alchemy.com/v2/${key}`,
+    arbitrum:           `https://arb-mainnet.g.alchemy.com/v2/${key}`,
+    "ethereum-sepolia": `https://eth-sepolia.g.alchemy.com/v2/${key}`,
+    "base-sepolia":     `https://base-sepolia.g.alchemy.com/v2/${key}`,
+    "arbitrum-sepolia": `https://arb-sepolia.g.alchemy.com/v2/${key}`,
+    "optimism-sepolia": `https://opt-sepolia.g.alchemy.com/v2/${key}`,
   }
   return map[chain] ?? map["ethereum"]
 }
 
 function chainToPublicUrl(chain: string): string {
   const map: Record<string, string> = {
-    base:     "https://mainnet.base.org",
-    ethereum: "https://eth.llamarpc.com",
-    optimism: "https://mainnet.optimism.io",
-    arbitrum: "https://arb1.arbitrum.io/rpc",
+    ethereum:           "https://eth.llamarpc.com",
+    base:               "https://mainnet.base.org",
+    optimism:           "https://mainnet.optimism.io",
+    arbitrum:           "https://arb1.arbitrum.io/rpc",
+    "ethereum-sepolia": "https://rpc.sepolia.org",
+    "base-sepolia":     "https://sepolia.base.org",
+    "arbitrum-sepolia": "https://sepolia-rollup.arbitrum.io/rpc",
+    "optimism-sepolia": "https://sepolia.optimism.io",
   }
   return map[chain] ?? map["ethereum"]
 }

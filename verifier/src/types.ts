@@ -61,6 +61,11 @@ export interface PollInfo {
   operator_address?: string  // Aleo address of the tally operator (from OPERATOR_ADDRESS env)
   options: PollOptionInfo[]
   ipfs_cid?: string          // CID of the full poll metadata on IPFS (Pinata)
+  // V2: populated by tally runner after publishing scoped snapshots.
+  // Maps parentOptionId → on-chain scope_key (BHP256 hash used as mapping key).
+  scope_keys?: Array<{ parentOptionId: number; scopeKey: string }>
+  vote_txids?: string[]  // cast_vote tx IDs — persisted to JSON, used by tally engine
+  creator_address?: string  // wallet address of poll creator — verified server-side
 }
 
 export interface CommunityConfig {

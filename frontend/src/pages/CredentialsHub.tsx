@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useAleoWallet } from '../hooks/useAleoWallet'
 import { listCommunities } from '../lib/verifier'
+import { getBlockHeight } from '../lib/aleo'
 import ConnectorSelector from '../components/ConnectorSelector'
 import RequirementsPanel from '../components/RequirementsPanel'
 import type { CommunityConfig, ConnectedAccount, Credential } from '../types'
@@ -22,6 +23,7 @@ function CommunityCredentialRow({
   aleoAddress,
   connected,
   executeTransaction,
+  currentBlock,
 }: {
   community:         CommunityConfig
   credentials:       Credential[]
@@ -32,6 +34,7 @@ function CommunityCredentialRow({
   executeTransaction: ((opts: {
     program: string; function: string; fee: number; privateFee: boolean; inputs: string[]
   }) => Promise<{ transactionId: string } | undefined>) | undefined
+  currentBlock: number
 }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -46,7 +49,7 @@ function CommunityCredentialRow({
   const communityField = communityIdToField(community.community_id)
   const matchingCred = credentials.find(c => c.community_id === communityField && c.credential_type === community.credential_type)
   const credStatus = matchingCred
-    ? (matchingCred.expiry_block > 0 ? 'active' : 'expired')
+    ? (matchingCred.expiry_block > currentBlock ? 'active' : 'expired')
     : 'none'
 
   const allFree = community.requirement_groups.flatMap(g => g.requirements).every(r => r.type === 'FREE')
@@ -145,12 +148,14 @@ export default function CredentialsHub() {
   }, [])
   const [loading, setLoading]                 = useState(true)
   const [credsLoading, setCredsLoading]       = useState(false)
+  const [currentBlock, setCurrentBlock]       = useState(0)
 
   useEffect(() => {
     listCommunities()
       .then(setCommunities)
       .catch(() => null)
       .finally(() => setLoading(false))
+    getBlockHeight().then(setCurrentBlock).catch(() => null)
   }, [])
 
   useEffect(() => {
@@ -187,7 +192,7 @@ export default function CredentialsHub() {
           {[
             { n: '1', title: 'Connect accounts', desc: 'Link your EVM wallet, X / Twitter, or Discord as needed.' },
             { n: '2', title: 'Verify requirements', desc: 'The verifier checks your eligibility off-chain.' },
-            { n: '3', title: 'Your wallet signs', desc: 'You sign the credential transaction — no server key involved.' },
+            { n: '3', title: 'Your wallet signs', desc: 'You sign the credential transaction no server key involved.' },
           ].map(({ n, title, desc }) => (
             <div key={n} className="flex flex-col gap-1.5">
               <div className="w-7 h-7 rounded-full bg-[#0070F3] text-white text-xs font-bold flex items-center justify-center shrink-0">
@@ -270,6 +275,7 @@ export default function CredentialsHub() {
                 aleoAddress={aleoAddress}
                 connected={connected}
                 executeTransaction={executeTransaction}
+                currentBlock={currentBlock}
               />
             ))}
           </div>

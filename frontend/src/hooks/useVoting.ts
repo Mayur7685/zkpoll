@@ -108,7 +108,7 @@ export function useVoting() {
       // poll_id, nullifier, and operator are public (finalize mapping updates).
       const operator = operatorAddress ?? (import.meta.env.VITE_OPERATOR_ADDRESS as string) ?? ''
       const result = await executeTransaction!({
-        program:  'zkpoll_core.aleo',
+        program:  'zkpoll_v2_core.aleo',
         function: 'cast_vote',
         fee:      VOTE_FEE,
         privateFee: false,
@@ -145,9 +145,16 @@ export function useVoting() {
 
             if (s === TransactionStatus.ACCEPTED) {
               stopPolling()
-              // Prefer real on-chain ID for the explorer link
               if (onChainId) setTxId(onChainId)
               setStatus('done')
+              // Report confirmed tx ID to verifier so tally engine can find it
+              const reportId = onChainId ?? walletTxId
+              const VERIFIER = import.meta.env.VITE_VERIFIER_URL ?? '/api'
+              fetch(`${VERIFIER}/polls/${pollId}/vote-tx`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ txId: reportId, communityId }),
+              }).catch(() => {})
             } else if (s === TransactionStatus.FAILED || s === TransactionStatus.REJECTED) {
               stopPolling()
               setError(res.error ?? 'Transaction rejected on-chain')

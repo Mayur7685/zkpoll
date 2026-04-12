@@ -1,408 +1,334 @@
-# ZKPoll — Privacy-Preserving Ranked Voting on Aleo
+# ZKPoll
 
-ZKPoll is a decentralised governance platform built on Aleo that enables communities to run **ranked-choice polls with private ballots**. Voters prove community membership with a zero-knowledge credential without revealing which options they chose. Results are tallied automatically by an operator service using encrypted vote copies.
+Privacy-first ranked-choice voting on Aleo. Votes are zero-knowledge proofs — rankings are never in public calldata. Results are verifiable on-chain.
 
----
 
-## Live Deployment
-
-| Item | Value |
-|------|-------|
-| **Contract** | `zkpoll_core.aleo` |
-| **Network** | Aleo Testnet |
-| **Deploy tx** | `at1ywsyq84d0zshjkc6py34skxgkmexqkhp0xk29nmy5upgr2hpguxq9qkx2c` |
-| **Explorer** | https://testnet.explorer.provable.com/transaction/at1ywsyq84d0zshjkc6py34skxgkmexqkhp0xk29nmy5upgr2hpguxq9qkx2c |
-
----
-
-## How It Works
-
-### Privacy model
-
-| What | Visibility |
-|------|-----------|
-| Who voted (voter address) | Public — `self.caller` in `cast_vote` |
-| Which options were ranked | **Private** — encrypted in Vote record, only voter's view key decrypts |
-| Credential details (social accounts, token balance) | **Never on-chain** — checked off-chain by verifier |
-| Final tally result | Public — published as a `Snapshot` mapping entry |
-
-### Vote flow
+## How it works
 
 ```
-Voter                     Verifier (server)             zkpoll_core.aleo
-  │                              │                              │
-  │── meets requirements? ──────>│                              │
-  │<── credential params ────────│                              │
-  │                              │                              │
-  │── issue_credential ─────────────────────────────────────>  │
-  │<── Credential record (private, owner = voter) ────────────  │
-  │                              │                              │
-  │── cast_vote ────────────────────────────────────────────>  │
-  │      (credential + rankings as private ZK witnesses)        │
-  │<── Vote record (private, owner = voter)  ─────────────────  │
-  │<── OperatorVote record (private, owner = operator) ────────  │
-  │                              │                              │
-  │                    Operator service                         │
-  │                    decrypts OperatorVote                    │
-  │                    computes MDCT tally                      │
-  │                    ── create_snapshot ──────────────────>  │
-  │                                                 Snapshot    │
-  │                                                 in mapping  │
+User wallet  ──►  zkpoll_v2_core.aleo  ──►  OperatorVote (encrypted)
+                                                    │
+Verifier  ──►  issue_credential  ──►  Vote record   │
+                                                    ▼
+                                         Tally operator decrypts
+                                         → create_scoped_snapshot
 ```
 
-### MDCT Weighted Tally
+1. **Community creator** registers a community on-chain and defines membership requirements (token balance, NFT, Discord role, X follow, etc.)
+2. **Voter** connects external accounts, verifier checks eligibility off-chain, voter's own wallet signs `issue_credential` — no server key involved
+3. **Voter** casts a ranked ballot via `cast_vote` — rankings are private ZK witnesses, never in calldata
+4. **Tally operator** decrypts `OperatorVote` records and publishes `create_scoped_snapshot` on-chain
+5. Anyone can verify results by reading the on-chain snapshot mappings
 
-Scores are computed using **MetaPoll Decay-Weighted Condorcet Tally**:
+## Features
+
+### Communities
+- Create a community with a name, description, logo, and credential type
+- Define membership requirements with `AND`/`OR` group logic — mix token balance, NFT ownership, social follows, Discord roles, GitHub accounts, and more
+- Each requirement type carries a configurable `vote_weight` — token holders can be given more votes than social followers
+- Community metadata is optionally pinned to IPFS via Pinata for decentralised discoverability
+- Only the community creator can create polls in their community — enforced both in the UI and at the verifier API
+
+### Credentials
+- Verifier checks requirements off-chain, then returns signed inputs
+- The voter's own wallet calls `issue_credential` — a private `Vote` record is minted directly to their wallet
+- No server-side signing key in the recommended flow
+- Credentials have an on-chain expiry block — expired credentials cannot be used to vote
+- The Credentials Hub page shows all communities, per-community eligibility status, and lets users claim or renew credentials
+
+### Voting
+- Ranked-choice ballot — voters drag/tap to rank options in order of preference
+- Rankings are private ZK witnesses — never appear in public calldata or transaction inputs
+- Double-vote prevention via on-chain nullifier mapping
+- `cast_vote` is a single wallet transaction for flat polls
+- After voting, the UI shows the voter's submitted rankings and links to the transaction on the explorer
+
+### Voting power decay
+Voting power decays over 5 periods (~90 days each at 5760 blocks/day) to incentivise active participation:
 
 ```
-score(option) = Σ voting_weight × (1 / rank_position)
+Period 1: 100% → Period 2: 50% → Period 3: 25% → Period 4: 12.5% → Period 5: 6.25% → deactivated
 ```
 
-- Rank 1 = full weight (1.0×)
-- Rank 2 = half weight (0.5×)
-- Rank 3 = one-third (0.33×) … and so on
-- `voting_weight` comes from the credential (computed by verifier based on requirements passed)
+`CountedVotes (CV) = EligibleVotes (EV) × VotingPower% (VP)`
 
-Options are sorted by total score descending. The option with the highest score is the winner.
+The UI shows a live EV / VP% / CV panel on the poll page and in My Votes. Voters can recast their ballot at any time with the same rankings to restore 100% VP.
 
----
+### Tally & Results
+- Background tally runner polls on-chain every 5 minutes for new `cast_vote` transactions
+- Scores using MDCT (Modified Decay Condorcet Tally): `score(rank) = 1/rank`
+- Operator publishes `create_scoped_snapshot` on-chain — one snapshot per parent option
+- Results page reads snapshots directly from on-chain mappings — no trust in the verifier
+- Manual tally trigger available via `POST /operator/tally/:pollId`
 
-## Architecture
+### My Votes
+- Reads private `Vote` records directly from the connected wallet
+- Shows EV / VP% / CV at the current block for each past vote
+- Decay bar shows days until next VP halving
+- Deactivated votes (VP = 0%) are highlighted in red
+
+## Project structure
 
 ```
 zkpoll/
-├── zkpoll_core/          Leo contract (single consolidated program)
-│   ├── src/main.leo
-│   └── program.json
-│
-├── frontend/             React + Vite + Tailwind
+├── zkpoll_v2_core/          # Leo smart contract (active)
+│   └── src/main.leo         # register_community, create_poll, issue_credential,
+│                            # cast_vote, create_scoped_snapshot
+├── frontend/                # React + Vite UI
 │   └── src/
-│       ├── pages/        PollDetail, PollResults, CommunityDetail…
-│       ├── components/   CreateCommunityWizard, CreatePollWizard…
-│       ├── hooks/        useVoting, useAleoWallet, useCredentialHub…
-│       └── lib/          aleo.ts (RPC), verifier.ts (API client)
-│
-└── verifier/             Node.js + Express (off-chain service)
-    └── src/
-        ├── index.ts      REST API server
-        ├── evaluator.ts  Requirement checking logic
-        ├── issuer.ts     On-chain tx helpers (issue_credential)
-        ├── tally.ts      OperatorVote decryption + MDCT computation
-        ├── tally-runner.ts  Background auto-tally service
-        ├── checkers/     Per-requirement checkers (GitHub, Discord…)
-        └── communities/  JSON config store (one file per community)
+│       ├── pages/           # PollFeed, CommunityFeed, CommunityDetail,
+│       │                    # PollDetail, PollResults, CredentialsHub, MyVotes
+│       ├── components/      # CreateCommunityWizard, CreatePollWizard,
+│       │                    # CredentialHub, ConnectorSelector, VotingMode
+│       ├── hooks/           # useAleoWallet, useVoting, useCredentialHub
+│       └── lib/             # aleo.ts (RPC), verifier.ts (HTTP client), decay.ts
+├── verifier/                # Node.js + Express off-chain service
+│   └── src/
+│       ├── index.ts         # REST API
+│       ├── evaluator.ts     # requirement group evaluation
+│       ├── tally.ts         # on-chain vote decryption + MDCT scoring
+│       ├── tally-runner.ts  # background tally loop
+│       ├── oauth.ts         # Twitter, Discord, GitHub, Telegram OAuth
+│       ├── issuer.ts        # legacy server-side credential issuance
+│       ├── pinata.ts        # IPFS pinning (optional)
+│       └── checkers/        # per-requirement-type check implementations
+└── communities/             # JSON store — one file per community + polls
 ```
 
-### Contract — `zkpoll_core.aleo`
-
-Single Leo program covering all functionality:
-
-| Transition | Caller | Purpose |
-|-----------|--------|---------|
-| `register_community` | Community creator (wallet) | Register community on-chain, creator = self.caller |
-| `update_community` | Community creator | Update IPFS config hash |
-| `deactivate_community` | Community creator | Disable community |
-| `create_poll` | Community creator (wallet) | Create poll gated to their community |
-| `add_option` | Poll creator | Add option to poll (on-chain metadata) |
-| `close_poll` | Poll creator | Close poll early |
-| `issue_credential` | Verifier service | Issue private Credential record to eligible voter |
-| `cast_vote` | Voter (wallet) | Cast ranked vote — dual output (Vote + OperatorVote) |
-| `create_snapshot` | Operator service | Publish MDCT tally result on-chain |
-
-**Mappings:**
-
-| Mapping | Key | Value |
-|---------|-----|-------|
-| `communities` | `field` (community_id) | `CommunityMeta` |
-| `polls` | `field` (poll_id) | `PollMeta` |
-| `poll_options` | `field` (hash of poll+option) | `PollOption` |
-| `used_nullifiers` | `field` (nullifier) | `bool` |
-| `poll_vote_count` | `field` (poll_id) | `u32` |
-| `credential_count` | `field` (community_id) | `u32` |
-| `snapshots` | `u32` (snapshot_id) | `Snapshot` |
-| `latest_snapshot` | `field` (poll_id) | `u32` (snapshot_id) |
-
-### Verifier Service
-
-Off-chain Node.js server that:
-- Stores community configs (requirements, poll metadata, options) as JSON + IPFS
-- Evaluates requirements against connected accounts (EVM wallets, Twitter, Discord, GitHub, Telegram)
-- Returns credential params for the user's wallet to call `issue_credential`
-- Runs the **automated tally runner** — decrypts `OperatorVote` records using operator view key, computes MDCT, calls `create_snapshot`
-
-### Frontend
-
-React SPA that:
-- Connects to Leo / Puzzle / Shield wallets via the Aleo wallet adapter
-- Calls verifier for requirement verification and credential params
-- Submits `issue_credential`, `cast_vote`, `register_community`, `create_poll` transactions from the user's wallet
-- Reads on-chain state (vote counts, snapshots) via Aleo RPC
-- Displays ranked results with real option labels
+Legacy Leo programs (`poll_create`, `vote_cast`, `credential_issue`, `snapshot_tally`, v2 variants, `vote_cast_v3`) are kept for reference. The active contract is `zkpoll_v2_core.aleo`.
 
 ---
 
-## Supported Requirement Types
+## Real-world scenario
+
+**A DAO wants to decide their Q3 budget allocation across 5 departments.**
+
+1. **Alice (DAO admin)** opens ZKPoll, connects her Aleo wallet, and creates a community called "Acme DAO". She sets the membership requirement to "hold ≥ 100 ACME tokens on Ethereum". She clicks "Register" — her wallet signs `register_community` on Aleo testnet.
+
+2. **Alice creates a poll** "Q3 Budget Allocation" with 5 options: Engineering, Marketing, Operations, Research, Community. She sets a 14-day voting window. Her wallet signs `create_poll`.
+
+3. **Bob (a DAO member)** visits ZKPoll, finds Acme DAO, and clicks "Get Credential". He connects his MetaMask — the verifier checks his ACME balance off-chain. He passes. His own Aleo wallet signs `issue_credential` — a private `Vote` record lands in his wallet. The verifier never touched a signing key.
+
+4. **Bob votes**. He ranks: 1. Engineering, 2. Research, 3. Community. He clicks Submit — his wallet signs `cast_vote`. His rankings are private ZK witnesses. The transaction shows his address publicly (he voted) but not what he voted.
+
+5. **14 days later**, the tally operator's background service decrypts all `OperatorVote` records using the operator view key, scores them with MDCT decay, and publishes `create_scoped_snapshot` on-chain.
+
+6. **Anyone** can visit the Results page and see the ranked outcome — verified directly from on-chain snapshot mappings. No trust in ZKPoll required.
+
+
+---
+
+## Prerequisites
+
+- Node.js 18+
+- An Aleo wallet (Leo Wallet, Puzzle, Fox, Shield, or Soter)
+- Leo CLI (for contract deployment): `curl -sSf https://raw.githubusercontent.com/ProvableHQ/leo/mainline/install.sh | sh`
+
+## Quick start
+
+### 1. Deploy the contract (skip if using existing testnet deployment)
+
+```bash
+cd zkpoll_v2_core
+cp .env.example .env   # set PRIVATE_KEY
+leo deploy --network testnet
+```
+
+### 2. Verifier
+
+```bash
+cd verifier
+cp .env.example .env
+# Fill in: OPERATOR_PRIVATE_KEY, OPERATOR_VIEW_KEY, OPERATOR_ADDRESS
+# Optional: ALCHEMY_API_KEY, TWITTER_*, DISCORD_*, GITHUB_*, TELEGRAM_*, PINATA_*
+npm install
+npm run dev
+```
+
+Runs on `http://localhost:3001`.
+
+### 3. Frontend
+
+```bash
+cd frontend
+cp .env.example .env
+# Set VITE_OPERATOR_ADDRESS to match verifier's OPERATOR_ADDRESS
+npm install
+npm run dev
+```
+
+Runs on `http://localhost:5173`.
+
+## Environment variables
+
+### `frontend/.env`
+
+| Variable | Description |
+|---|---|
+| `VITE_ALEO_NODE_URL` | Aleo node RPC URL (default: `https://api.explorer.provable.com/v1`) |
+| `VITE_ALEO_NETWORK` | `testnet` or `mainnet` |
+| `VITE_VERIFIER_URL` | Verifier backend URL (default: `http://localhost:3001`) |
+| `VITE_OPERATOR_ADDRESS` | Tally operator public address — must match verifier's `OPERATOR_ADDRESS` |
+
+### `verifier/.env`
+
+| Variable | Required | Description |
+|---|---|---|
+| `OPERATOR_PRIVATE_KEY` | Yes | Operator keypair for tally decryption + snapshot publishing |
+| `OPERATOR_VIEW_KEY` | Yes | Operator view key for decrypting `OperatorVote` records |
+| `OPERATOR_ADDRESS` | Yes | Operator public address |
+| `ALEO_ISSUER_PRIVATE_KEY` | Legacy | Only needed for `/verify` (legacy credential issuance) |
+| `ALCHEMY_API_KEY` | EVM checks | Token balance, NFT, on-chain activity requirements |
+| `TWITTER_BEARER_TOKEN` | X follow | Twitter API v2 bearer token |
+| `TWITTER_CLIENT_ID/SECRET` | X OAuth | For X connect flow |
+| `DISCORD_BOT_TOKEN` | Discord | Guild membership checks |
+| `DISCORD_CLIENT_ID/SECRET` | Discord OAuth | For Discord connect flow |
+| `GITHUB_CLIENT_ID/SECRET` | GitHub OAuth | For GitHub connect flow |
+| `TELEGRAM_BOT_TOKEN` | Telegram | Widget auth verification |
+| `TELEGRAM_BOT_USERNAME` | Telegram | Bot username (without @) |
+| `PINATA_JWT` | Optional | IPFS pinning for community/poll metadata |
+| `PINATA_GATEWAY` | Optional | Pinata gateway subdomain |
+| `APP_URL` | OAuth | Frontend URL for OAuth callbacks (default: `http://localhost:5173`) |
+| `PORT` | Optional | Verifier port (default: `3001`) |
+
+## Requirement types
+
+Communities can gate membership with any combination of:
 
 | Type | What it checks |
-|------|---------------|
-| `FREE` | Always passes — open to everyone |
-| `ALLOWLIST` | Wallet address in a hardcoded list |
-| `TOKEN_BALANCE` | ERC-20 balance on EVM chain ≥ minAmount |
-| `NFT_OWNERSHIP` | Holds NFT from a contract |
-| `ONCHAIN_ACTIVITY` | Min transaction count on EVM chain |
-| `DOMAIN_OWNERSHIP` | ENS / Unstoppable domain owner |
-| `X_FOLLOW` | Follows a Twitter/X account |
+|---|---|
+| `FREE` | Open to everyone |
+| `ALLOWLIST` | EVM address in a predefined list |
+| `TOKEN_BALANCE` | ERC-20 balance ≥ threshold (via Alchemy) |
+| `NFT_OWNERSHIP` | ERC-721/1155 ownership (via Alchemy) |
+| `ONCHAIN_ACTIVITY` | Minimum tx count on EVM chain |
+| `DOMAIN_OWNERSHIP` | ENS / domain ownership |
+| `X_FOLLOW` | Follows a specific X/Twitter account |
 | `DISCORD_MEMBER` | Member of a Discord server |
-| `DISCORD_ROLE` | Has a specific role in a Discord server |
-| `GITHUB_ACCOUNT` | GitHub account with min repos / followers / org / commits / starred repo |
-| `TELEGRAM_MEMBER` | Member of a Telegram group/channel |
+| `DISCORD_ROLE` | Holds a specific Discord role |
+| `GITHUB_ACCOUNT` | Has a GitHub account |
+| `TELEGRAM_MEMBER` | Member of a Telegram group |
 
-Multiple requirements can be combined with AND / OR logic within groups.
+Requirements are grouped with `AND`/`OR` logic. Each requirement type carries a configurable `vote_weight` that determines the voter's `EligibleVotes (EV)`.
 
----
+## Voting power decay
 
-## Setup
+Voting power decays over 5 periods (each ~90 days at 5760 blocks/day):
 
-### Prerequisites
-
-- Node.js 20+
-- Leo 4.0.0 (`cargo install leo-lang`)
-- An Aleo wallet (Leo / Puzzle / Shield)
-- Testnet credits (from the Aleo faucet)
-
-### 1. Install dependencies
-
-```bash
-cd zkpoll/frontend && npm install
-cd ../verifier && npm install
+```
+Period 1: 100%  →  Period 2: 50%  →  Period 3: 25%  →  Period 4: 12.5%  →  Period 5: 6.25%  →  deactivated
 ```
 
-### 2. Configure environment
+`CountedVotes (CV) = EligibleVotes × VotingPower%`
 
-**`verifier/.env`**
-```env
-ALEO_ISSUER_PRIVATE_KEY=APrivateKey1...   # verifier's signing key for issue_credential
-ALEO_NODE_URL=https://api.explorer.provable.com/v1
-ALEO_NETWORK=testnet
+Voters can recast their ballot at any time to restore 100% voting power.
 
-OPERATOR_PRIVATE_KEY=APrivateKey1...      # operator key — signs create_snapshot
-OPERATOR_VIEW_KEY=AViewKey1...            # operator view key — decrypts OperatorVote records
-OPERATOR_ADDRESS=aleo1...                 # operator public address
+## Verifier API
 
-PINATA_JWT=...                            # optional — IPFS pinning for community configs
-GITHUB_CLIENT_ID=...                      # optional — GitHub OAuth
-GITHUB_CLIENT_SECRET=...
-TWITTER_CLIENT_ID=...                     # optional — Twitter OAuth
-TWITTER_CLIENT_SECRET=...
-DISCORD_CLIENT_ID=...                     # optional — Discord OAuth
-DISCORD_CLIENT_SECRET=...
-TELEGRAM_BOT_TOKEN=...                    # optional — Telegram widget auth
-TELEGRAM_BOT_USERNAME=...
+Full API reference: [`VERIFIER_API.md`](./VERIFIER_API.md)
 
-APP_URL=http://localhost:5173
-PORT=3001
-```
-
-**`frontend/.env`**
-```env
-VITE_ALEO_NODE_URL=https://api.explorer.provable.com/v1
-VITE_ALEO_NETWORK=testnet
-VITE_OPERATOR_ADDRESS=aleo1...            # same as OPERATOR_ADDRESS above
-```
-
-### 3. Run locally
-
-```bash
-# Terminal 1
-cd zkpoll/verifier && npm run dev
-
-# Terminal 2
-cd zkpoll/frontend && npm run dev
-```
-
-Open `http://localhost:5173`
-
----
-
-## Deploying the Contract
-
-The contract is already deployed. To redeploy from source:
-
-```bash
-cd zkpoll/zkpoll_core
-
-# Build
-leo build
-
-# Deploy (requires credits in .env PRIVATE_KEY account)
-leo deploy --network testnet \
-  --endpoint https://api.explorer.provable.com/v1 \
-  --yes --broadcast
-```
-
-To generate a new operator keypair:
-
-```bash
-leo account new
-# Copy Private Key → OPERATOR_PRIVATE_KEY
-# Copy View Key   → OPERATOR_VIEW_KEY
-# Copy Address    → OPERATOR_ADDRESS + VITE_OPERATOR_ADDRESS
-```
-
----
-
-## Operator & Tally Service
-
-The tally runner starts automatically with the verifier (`startTallyRunner()` in `index.ts`).
-
-**Automatic mode:** checks every 60 seconds — publishes snapshot when `block.height > poll.end_block`
-
-**Force mode (for testing):**
-
-```bash
-curl -X POST http://localhost:3001/operator/tally/POLL_ID \
-  -H "Content-Type: application/json" \
-  -d '{"communityId": "your-community-id", "force": true}'
-```
-
-This bypasses the `end_block` check and publishes immediately. Use this during demos or testing so judges don't have to wait for the poll to naturally expire.
-
-**What the tally service does:**
-1. Scans all `cast_vote` transitions on `zkpoll_core.aleo`
-2. For each `OperatorVote` output, attempts decryption with `OPERATOR_VIEW_KEY`
-3. Parses rankings and `voting_weight` from decrypted plaintext
-4. Computes MDCT scores: `score[optionId] += voting_weight × (1 / rank_position)`
-5. Sorts by score descending → fills `rank_1_option` through `rank_8_option`
-6. Calls `create_snapshot` on-chain using `OPERATOR_PRIVATE_KEY`
-
-The operator account must hold testnet credits to pay the `create_snapshot` fee.
-
----
-
-## API Reference (Verifier)
+Key endpoints:
 
 | Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/health` | Service health check |
+|---|---|---|
 | `GET` | `/communities` | List all communities |
-| `GET` | `/communities/:id` | Get community config + polls |
-| `POST` | `/communities` | Create community (saves config, pins to IPFS) |
-| `POST` | `/communities/:id/polls` | Register poll metadata |
-| `POST` | `/verify/check` | Check requirements, no on-chain action |
-| `POST` | `/verify/credential-params` | Verify + return inputs for `issue_credential` |
-| `POST` | `/verify` | Legacy: verify + issue credential via verifier wallet |
-| `POST` | `/operator/tally/:pollId` | Trigger tally (preview or force publish) |
-| `GET` | `/polls/:id/vote-count` | Read on-chain vote count |
-| `GET` | `/auth/twitter` | Twitter OAuth flow |
-| `GET` | `/auth/discord` | Discord OAuth flow |
-| `GET` | `/auth/github` | GitHub OAuth flow |
-| `GET` | `/auth/telegram` | Telegram widget page |
+| `POST` | `/communities` | Create community (called after on-chain `register_community`) |
+| `POST` | `/communities/:id/polls` | Register poll metadata (called after on-chain `create_poll`) |
+| `POST` | `/verify/check` | Check requirements, return pass/fail per requirement |
+| `POST` | `/verify/credential-params` | Verify + return inputs for user's wallet to call `issue_credential` |
+| `POST` | `/operator/tally/:pollId` | Manually trigger tally (preview or force publish snapshot) |
+| `GET` | `/polls/:id/vote-count` | On-chain vote count for a poll |
 
----
+## Poll types
 
-## On-Chain Verification
+- **Flat** — root options only, single `cast_vote` transaction
+- **Hierarchical** *(experimental)* — root + sub-options up to depth 4, separate vote transaction per layer
+
+## Tally
+
+The tally runner polls on-chain every 5 minutes for new `cast_vote` transactions. It:
+1. Fetches `OperatorVote` records encrypted to the operator address
+2. Decrypts rankings using the operator view key
+3. Scores using MDCT (Modified Decay Condorcet Tally) — `score(rank) = 1/rank`
+4. Publishes `create_scoped_snapshot` on-chain per parent option when the poll closes
+
+Manual tally trigger: `POST /operator/tally/:pollId` with `{ communityId, force: true }`.
+
+## Deployment
+
+### Frontend (Vercel)
 
 ```bash
-BASE="https://api.explorer.provable.com/v1/testnet"
-PROGRAM="zkpoll_core.aleo"
-POLL_ID="<numeric_field>"
-COMMUNITY_ID="<numeric_field>"
-
-# Poll metadata
-curl "$BASE/program/$PROGRAM/mapping/polls/${POLL_ID}field"
-
-# Vote count
-curl "$BASE/program/$PROGRAM/mapping/poll_vote_count/${POLL_ID}field"
-
-# Nullifier check (double-vote guard)
-curl "$BASE/program/$PROGRAM/mapping/used_nullifiers/<NULLIFIER>field"
-
-# Latest snapshot ID for a poll
-curl "$BASE/program/$PROGRAM/mapping/latest_snapshot/${POLL_ID}field"
-
-# Snapshot data (replace 1 with snapshot ID)
-curl "$BASE/program/$PROGRAM/mapping/snapshots/1"
-
-# Community on-chain record
-curl "$BASE/program/$PROGRAM/mapping/communities/${COMMUNITY_ID}field"
-
-# Transaction details
-curl "$BASE/transaction/<TX_ID>"
+cd frontend
+npm run build
+# deploy dist/ to Vercel — vercel.json already configures SPA rewrites
 ```
 
----
+Set env vars in Vercel dashboard matching `frontend/.env.example`.
 
-## Privacy Guarantees
+### Verifier (Render / Railway / VPS)
 
-**What ZKPoll guarantees:**
-- Rankings (`rank_1`–`rank_8`) are **never in plaintext on-chain** — they are ZK private witnesses in the proof, stored only in the encrypted Vote record
-- Credential eligibility details (social follows, token balances) are **never submitted on-chain** — verified off-chain, used only to compute credential parameters
-- Only the voter (with their view key) can read their own Vote record
-- Only the operator (with the operator view key) can read OperatorVote records for tallying
-
-**What is intentionally public:**
-- Voter address — `self.caller` in `cast_vote` — "who voted" is public, mirroring real ballot rolls
-- Nullifier — proves a vote was cast, does not reveal the ranking
-- Final tally — published as a public on-chain snapshot
-
----
-
-## Project Structure (Detailed)
-
-```
-frontend/src/
-  pages/
-    CommunityFeed.tsx       Browse all communities
-    CommunityDetail.tsx     Community page + credential hub
-    PollDetail.tsx          MDCT tree navigation + vote submission
-    PollResults.tsx         Tally snapshot + personal vote history
-    CredentialsHub.tsx      Manage credentials + connected accounts
-    MyVotes.tsx             Vote history across all communities
-    CreateCommunity.tsx     → CreateCommunityWizard
-    CreatePoll.tsx          → CreatePollWizard
-
-  components/
-    CreateCommunityWizard.tsx   3-step: details → requirements → create
-    CreatePollWizard.tsx        3-step: setup → options → deploy
-    RequirementsPanel.tsx       Requirement check + credential issuance
-    CredentialHub.tsx           Credential display + recast action
-    ConnectorSelector.tsx       Connect EVM / Twitter / Discord / GitHub / Telegram
-
-  hooks/
-    useAleoWallet.ts         Wallet connection + record fetching
-    useVoting.ts             castVote — credential resolution + tx submission
-    useCredentialHub.ts      Credential state + VP% decay model
-    useVoteHistory.ts        Read Vote records from wallet
-
-  lib/
-    aleo.ts                  Aleo RPC helpers (mapping reads, block height)
-    verifier.ts              Verifier API client
-    ranking.ts               rankingToSlots helper
-    decay.ts                 VP% step-decay model (MetaPoll)
-
-verifier/src/
-  index.ts                   Express server + all routes
-  evaluator.ts               Requirement group evaluation + voting weight
-  issuer.ts                  On-chain tx helpers
-  tally.ts                   OperatorVote decryption + MDCT tally + snapshot publish
-  tally-runner.ts            Background 60s loop + manualTally endpoint
-  communities.ts             JSON file store for community configs
-  oauth.ts                   PKCE state + token store helpers
-  pinata.ts                  IPFS pinning via Pinata
-  checkers/
-    evm.ts                   Token balance, NFT, on-chain activity, domain
-    social_follow.ts         Twitter follow check + Telegram auth
-    discord.ts               Server membership + role check
-    github.ts                Repos, followers, org, commits, starred repo
-
-zkpoll_core/
-  src/main.leo               Single consolidated Leo contract
-  program.json               Program metadata (leo 4.0.0)
-  .env                       PRIVATE_KEY for deployment
+```bash
+cd verifier
+npm run build
+npm start
 ```
 
----
+Set env vars in your hosting dashboard. The `communities/` directory must be persistent (use a volume mount on Render/Railway).
 
-## License
+## Contract functions
 
-MIT
+All in `zkpoll_v2_core.aleo`:
+
+| Function | Caller | Description |
+|---|---|---|
+| `register_community` | Community creator | Register community on-chain with config hash |
+| `create_poll` | Community creator | Create poll, lock operator address |
+| `issue_credential` | Voter (after verifier check) | Mint private `Vote` credential to wallet |
+| `cast_vote` | Voter | Submit ranked ballot (rankings are private) |
+| `create_scoped_snapshot` | Operator | Publish tally result per parent option |
+
+## Security notes
+
+- Rankings are private ZK witnesses — never appear in public calldata or transaction inputs
+- `self.caller` (voter address) is public by design — vote privacy is about *what* you voted, not *that* you voted
+- Double-vote prevention via on-chain nullifier mapping (`poll_nullifiers`)
+- Credential issuance uses the voter's own wallet — the verifier never holds a signing key in the recommended flow
+- Poll creation is enforced creator-only both in the UI and at the verifier API level (`POST /communities/:id/polls` returns 403 for non-creators)
+
+## Future enhancements
+
+### Hierarchical polls (in beta)
+
+The contract, tally engine, and UI all support hierarchical ranked-choice polls — polls where options have sub-options up to depth 4.
+
+**Example:** A DAO votes on "Budget Allocation" with root options (Engineering, Marketing, Research) and sub-options under each (e.g. Engineering → Frontend, Backend, Infrastructure, Security).
+
+**Current state:**
+- `zkpoll_v2_core.aleo` supports `ScopedSnapshot` per parent option — one snapshot per node in the tree
+- The tally engine scores each parent's children independently using MDCT
+- The frontend wizard supports building option trees (up to 8 children per parent, depth 4)
+- The poll detail page supports drilling into sub-options and casting sub-rankings as separate transactions
+- The results page renders the full tree with expandable sub-option results
+
+**Why it's restricted to beta:**
+
+The ZK proof computation scales exponentially with the option tree size. A full tree of 8 root options × 8 children × 8 grandchildren × 8 great-grandchildren = 4,096 leaf options. Each `cast_vote` transaction generates a ZK proof over all private ranking inputs — at depth 4 with 8 children per node, proof generation time in the browser becomes impractical (minutes per transaction on consumer hardware).
+
+The current `cast_vote` circuit has 8 rank slots (`r1`–`r8`). For hierarchical polls, each layer requires a separate `cast_vote` transaction — so a depth-4 poll with full trees requires up to 4 wallet signatures per voter.
+
+**Path to production:**
+
+- Reduce max children per parent from 8 to 4 — cuts proof size significantly
+- Batch sub-layer rankings into a single transaction using recursive proofs (Leo 4.x)
+- Move proof generation server-side with a trusted execution environment, or use WASM workers with streaming progress UI
+- Add a "lazy ranking" mode — voters only rank layers they care about, skipping branches
+
+### Other planned features
+
+- **On-chain community config hash verification** — currently `config_hash` is stored in `CommunityMeta` but not verified against the off-chain JSON. A future version will pin the config to IPFS and verify the CID hash on-chain.
+- **Delegated voting** — allow credential holders to delegate their CV to another address for a specific poll
+- **Poll templates** — pre-built requirement group templates for common DAO setups (token-weighted, NFT-gated, open)
+- **Multi-network EVM support** — currently Alchemy-based checks support Ethereum, Base, Optimism, Arbitrum; expanding to Polygon, Avalanche, and others
+- **Credential renewal notifications** — push alerts (via wallet or email) when VP drops below a threshold
+- **Mainnet deployment** — currently testnet only; mainnet deployment pending Aleo mainnet stability

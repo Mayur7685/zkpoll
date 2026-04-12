@@ -1,6 +1,6 @@
 import { Account, ProgramManager, AleoNetworkClient, NetworkRecordProvider, AleoKeyProvider } from "@provablehq/sdk"
 
-const PROGRAM  = "zkpoll_core.aleo"
+const PROGRAM  = "zkpoll_v2_core.aleo"
 const NODE_URL = () => process.env.ALEO_NODE_URL!
 const FIELD_MODULUS = 8444461749428370424248824938781546531375899335154063827935233455917409239041n
 
