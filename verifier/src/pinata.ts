@@ -47,12 +47,19 @@ export async function pinJSON(data: unknown, name: string): Promise<string> {
   return json.data.cid
 }
 
-/** Fetch a JSON object from IPFS by CID via your Pinata gateway. */
+/** Fetch a JSON object from IPFS by CID via your Pinata gateway, with public fallback. */
 export async function fetchFromIPFS<T>(cid: string): Promise<T> {
-  const url = `https://${gateway()}.mypinata.cloud/ipfs/${cid}`
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`IPFS fetch failed (${res.status}): ${cid}`)
-  return res.json() as Promise<T>
+  const gw = process.env.PINATA_GATEWAY
+  const urls = gw
+    ? [`https://${gw}.mypinata.cloud/ipfs/${cid}`, `https://ipfs.io/ipfs/${cid}`]
+    : [`https://ipfs.io/ipfs/${cid}`]
+  for (const url of urls) {
+    try {
+      const res = await fetch(url)
+      if (res.ok) return res.json() as Promise<T>
+    } catch { continue }
+  }
+  throw new Error(`IPFS fetch failed for ${cid}`)
 }
 
 /** Public IPFS URL for a CID via your gateway. */

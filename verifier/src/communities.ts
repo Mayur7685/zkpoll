@@ -29,18 +29,43 @@ export function loadCommunities(): void {
 
 async function restoreFromIPFS(): Promise<void> {
   try {
-    const pins = await listPinsByPrefix("community-")
-    let restored = 0
-    for (const pin of pins) {
-      // pin.name is like "community-akindohq" — extract community_id
-      const communityId = pin.name.replace(/^community-/, '')
-      if (configs.has(communityId)) continue  // already loaded locally
+    const [communityPins, pollPins] = await Promise.all([
+      listPinsByPrefix("community-"),
+      listPinsByPrefix("poll-"),
+    ])
+
+    // Build poll lookup: community_id → PollInfo[]
+    const pollsByComm = new Map<string, any[]>()
+    await Promise.all(pollPins.map(async pin => {
       try {
-        const config = await fetchFromIPFS<CommunityConfig>(pin.cid)
-        if (!config.community_id) continue
-        saveCommunityConfig(config)
-        restored++
-        console.log(`[restore] Restored community "${communityId}" from IPFS (${pin.cid})`)
+        const poll = await fetchFromIPFS<any>(pin.cid)
+        if (!poll.poll_id || !poll.community_id) return
+        if (!pollsByComm.has(poll.community_id)) pollsByComm.set(poll.community_id, [])
+        const existing = pollsByComm.get(poll.community_id)!
+        if (!existing.find((p: any) => p.poll_id === poll.poll_id)) existing.push(poll)
+      } catch { /* skip */ }
+    }))
+
+    let restored = 0
+    for (const pin of communityPins) {
+      const communityId = pin.name.replace(/^community-/, '')
+      try {
+        // Use existing local config if available, otherwise fetch from IPFS
+        let config: any = configs.get(communityId)
+        if (!config) {
+          config = await fetchFromIPFS<any>(pin.cid)
+          if (!config.community_id) continue
+        }
+        // Merge any polls from IPFS that are missing locally
+        const extraPolls = pollsByComm.get(communityId) ?? []
+        const existingIds = new Set((config.polls ?? []).map((p: any) => p.poll_id))
+        const newPolls = extraPolls.filter((p: any) => !existingIds.has(p.poll_id))
+        if (newPolls.length > 0 || !configs.has(communityId)) {
+          config.polls = [...(config.polls ?? []), ...newPolls]
+          saveCommunityConfig(config)
+          restored++
+          console.log(`[restore] Restored "${communityId}" with ${(config.polls ?? []).length} poll(s)`)
+        }
       } catch (e: any) {
         console.warn(`[restore] Failed to restore "${communityId}": ${e.message}`)
       }
