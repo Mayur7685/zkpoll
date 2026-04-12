@@ -37,11 +37,13 @@ const CHANNELS: Partial<Record<ConnectorType, string>> = {
   TELEGRAM:  'zkpoll-telegram',
 }
 
+const VERIFIER = import.meta.env.VITE_VERIFIER_URL ?? '/api'
+
 const ROUTES: Partial<Record<ConnectorType, string>> = {
-  X_TWITTER: '/api/auth/twitter',
-  DISCORD:   '/api/auth/discord',
-  GITHUB:    '/api/auth/github',
-  TELEGRAM:  '/api/auth/telegram',
+  X_TWITTER: `${VERIFIER}/auth/twitter`,
+  DISCORD:   `${VERIFIER}/auth/discord`,
+  GITHUB:    `${VERIFIER}/auth/github`,
+  TELEGRAM:  `${VERIFIER}/auth/telegram`,
 }
 
 /** Open a centered popup and resolve when the BroadcastChannel fires. */
