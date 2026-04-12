@@ -77,6 +77,7 @@ export interface CommunityConfig {
   credential_expiry_days: number // e.g. 365
   requirement_groups: RequirementGroup[]
   polls?: PollInfo[]
+  creator?: string               // Aleo address of community creator
 }
 
 export type ConnectorType =
