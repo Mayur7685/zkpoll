@@ -187,9 +187,10 @@ Runs on `http://localhost:5173`.
 | `TELEGRAM_BOT_TOKEN` | Telegram | Widget auth verification |
 | `TELEGRAM_BOT_USERNAME` | Telegram | Bot username (without @) |
 | `PINATA_JWT` | Optional | IPFS pinning for community/poll metadata |
-| `PINATA_GATEWAY` | Optional | Pinata gateway subdomain |
-| `APP_URL` | OAuth | Frontend URL for OAuth callbacks (default: `http://localhost:5173`) |
+| `PINATA_GATEWAY` | Optional | Pinata gateway subdomain only — e.g. `beige-quiet-bear-123` (no `https://` or `.mypinata.cloud`) |
+| `APP_URL` | OAuth | Verifier's own public URL for OAuth callbacks — e.g. `https://zkpoll-verifier.onrender.com` (not the frontend URL) |
 | `PORT` | Optional | Verifier port (default: `3001`) |
+| `ADMIN_SECRET` | Optional | Secret for admin endpoints (e.g. `DELETE /communities/:id/polls/:pollId`) |
 
 ## Requirement types
 
@@ -274,7 +275,7 @@ npm run build
 npm start
 ```
 
-Set env vars in your hosting dashboard. The `communities/` directory must be persistent (use a volume mount on Render/Railway).
+Set env vars in your hosting dashboard. The `communities/` directory is ephemeral on Render free tier — community and poll configs are automatically restored from Pinata IPFS on startup if `PINATA_JWT` and `PINATA_GATEWAY` are set. Without Pinata, data is lost on redeploy.
 
 ## Contract functions
 

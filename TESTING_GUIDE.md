@@ -1,6 +1,7 @@
 # ZKPoll — End-to-End Testing Guide
 
-**Live Demo:** https://zkpoll-three.vercel.app  
+**Live Demo:** https://zkpoll-aleo.vercel.app  
+**Verifier API:** https://zkpoll-verifier.onrender.com  
 **Contract:** [`zkpoll_v2_core.aleo`](https://testnet.explorer.provable.com/program/zkpoll_v2_core.aleo) on Aleo Testnet  
 **Note:** The live demo backend runs on Render free tier — first request after idle may take 30–60s to wake up. For instant response, run locally using this guide.
 
@@ -100,7 +101,9 @@ ALEO_ISSUER_PRIVATE_KEY=<your_operator_private_key>
 # Alchemy — for EVM token/NFT checks (get free key at alchemy.com)
 ALCHEMY_API_KEY=<your_alchemy_key>
 
-# Pinata IPFS — optional
+# Pinata IPFS — optional but recommended for production
+# Communities and polls are pinned to IPFS and restored automatically on startup
+# PINATA_GATEWAY: subdomain only, e.g. "beige-quiet-bear-123" (NOT the full domain)
 PINATA_JWT=<your_pinata_jwt>
 PINATA_GATEWAY=<your_gateway_subdomain>
 

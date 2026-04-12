@@ -50,8 +50,10 @@ Redirects to Twitter OAuth 2.0 authorization page. Called by the frontend popup.
 1. Frontend opens `GET /auth/twitter` in a popup window
 2. User authorizes on Twitter
 3. Twitter redirects to `/auth/twitter/callback`
-4. Callback posts `{ userId, username }` to a `BroadcastChannel("zkpoll-twitter")`
+4. Callback sends result via `window.opener.postMessage` (cross-origin) + `BroadcastChannel` (same-origin fallback)
 5. Frontend receives the message and stores the connected account
+
+**Note:** `APP_URL` env var must be set to the **verifier's own URL** (e.g. `https://zkpoll-verifier.onrender.com`), not the frontend URL. OAuth callbacks hit the verifier directly.
 
 ---
 
@@ -61,14 +63,14 @@ OAuth callback — exchanges code for access token, fetches user profile, broadc
 
 **Query params:** `code`, `state`, `error` (from Twitter)
 
-**Success broadcast:**
+**Success message:**
 ```json
-{ "status": "success", "userId": "123456", "username": "handle" }
+{ "status": "success", "channel": "zkpoll-twitter", "userId": "123456", "username": "handle" }
 ```
 
-**Error broadcast:**
+**Error message:**
 ```json
-{ "status": "error", "message": "OAuth failed" }
+{ "status": "error", "channel": "zkpoll-twitter", "message": "OAuth failed" }
 ```
 
 ---
@@ -301,15 +303,41 @@ Registers a poll under a community. Called after `create_poll` on-chain transact
 ```
 
 **What it does:**
-1. Stamps `operator_address` from env
-2. Pins poll metadata to IPFS (if configured)
-3. Appends poll to community's `polls` array
-4. Saves updated community JSON
+1. Validates `creator_address` matches `community.creator` — returns `403` if not the community creator
+2. Stamps `operator_address` from env
+3. Pins poll metadata to IPFS (if configured)
+4. Appends poll to community's `polls` array
+5. Saves updated community JSON
 
 **Response:**
 ```json
 { "poll_id": "12345", "ipfs_cid": "bafkrei..." }
 ```
+
+**Error responses:**
+- `400` — missing `creator_address`
+- `403` — caller is not the community creator
+- `404` — community not found
+
+---
+
+### `DELETE /communities/:id/polls/:pollId`
+
+Removes a poll from a community. Admin-only — requires `ADMIN_SECRET` env var.
+
+**Headers:**
+```
+x-admin-secret: <ADMIN_SECRET>
+```
+
+**Response:**
+```json
+{ "ok": true, "removed": "<pollId>" }
+```
+
+**Error responses:**
+- `401` — missing or wrong secret
+- `404` — community or poll not found
 
 ---
 
