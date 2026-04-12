@@ -36,7 +36,7 @@ app.get("/auth/twitter", (_req, res) => {
   const params = new URLSearchParams({
     response_type:         "code",
     client_id:             clientId,
-    redirect_uri:          `${APP_URL}/api/auth/twitter/callback`,
+    redirect_uri:          `${APP_URL}/auth/twitter/callback`,
     scope:                 "tweet.read users.read follows.read",
     state,
     code_challenge:        codeChallenge,
@@ -64,7 +64,7 @@ app.get("/auth/twitter/callback", async (req: Request, res: Response) => {
     const body = new URLSearchParams({
       code,
       grant_type:    "authorization_code",
-      redirect_uri:  `${APP_URL}/api/auth/twitter/callback`,
+      redirect_uri:  `${APP_URL}/auth/twitter/callback`,
       code_verifier: entry.codeVerifier!,
       client_id:     clientId,
     })
@@ -117,7 +117,7 @@ app.get("/auth/discord", (_req, res) => {
   const params = new URLSearchParams({
     response_type: "code",
     client_id:     clientId,
-    redirect_uri:  `${APP_URL}/api/auth/discord/callback`,
+    redirect_uri:  `${APP_URL}/auth/discord/callback`,
     scope:         "identify guilds",   // guilds needed to check server membership via user token
     state,
   })
@@ -137,7 +137,7 @@ app.get("/auth/discord/callback", async (req: Request, res: Response) => {
         client_secret: process.env.DISCORD_CLIENT_SECRET!,
         grant_type:    "authorization_code",
         code,
-        redirect_uri:  `${APP_URL}/api/auth/discord/callback`,
+        redirect_uri:  `${APP_URL}/auth/discord/callback`,
       }),
       { headers: { "Content-Type": "application/x-www-form-urlencoded" } },
     )
@@ -167,7 +167,7 @@ app.get("/auth/github", (_req, res) => {
   const state  = generateState()
   const params = new URLSearchParams({
     client_id:    clientId,
-    redirect_uri: `${APP_URL}/api/auth/github/callback`,
+    redirect_uri: `${APP_URL}/auth/github/callback`,
     scope:        "read:user user:email",
     state,
   })
@@ -208,7 +208,7 @@ app.get("/auth/github/callback", async (req: Request, res: Response) => {
 app.get("/auth/telegram", (_req, res) => {
   const botUsername = process.env.TELEGRAM_BOT_USERNAME
   if (!botUsername) return res.status(500).send(popupError("zkpoll-telegram", "TELEGRAM_BOT_USERNAME not configured"))
-  const callbackUrl = `${APP_URL}/api/auth/telegram/callback`
+  const callbackUrl = `${APP_URL}/auth/telegram/callback`
   res.send(`<!DOCTYPE html><html><head>
 <title>Connect Telegram</title>
 <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f5f5f5}
