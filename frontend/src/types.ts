@@ -104,6 +104,7 @@ export interface Poll {
   required_credential_type: number
   created_at: number
   active: boolean
+  end_block?: number
   options: PollOption[]
   vote_count?: number
   operator_address?: string

@@ -4,7 +4,7 @@ import { useAleoWallet } from '../hooks/useAleoWallet'
 import { useVoting } from '../hooks/useVoting'
 import { useCredentialHub } from '../hooks/useCredentialHub'
 import { useToast } from '../components/Toast'
-import { getPollMeta, getPollVoteCount, getAllScopedSnapshots } from '../lib/aleo'
+import { getPollMeta, getPollVoteCount, getAllScopedSnapshots, getBlockHeight } from '../lib/aleo'
 import { getCommunity } from '../lib/verifier'
 import { vpTextColour } from '../lib/decay'
 import LayerNavbar from '../components/LayerNavbar'
@@ -98,6 +98,7 @@ export default function PollDetail() {
   const [snapshots, setSnapshots]   = useState<ScopedSnapshotMap>(new Map())
   const [pollLoading, setPollLoading] = useState(true)
   const [voteCount, setVoteCount]   = useState<number | null>(null)
+  const [currentBlock, setCurrentBlock] = useState(0)
 
   const [breadcrumb, setBreadcrumb] = useState<BreadcrumbEntry[]>([{ optionId: 0, label: 'Root' }])
   const currentParentId = breadcrumb[breadcrumb.length - 1]?.optionId ?? 0
@@ -116,7 +117,9 @@ export default function PollDetail() {
       getPollMeta(pollId),
       getCommunity(communityId),
       getPollVoteCount(pollId).catch(() => null),
-    ]).then(([meta, community, votes]) => {
+      getBlockHeight().catch(() => 0),
+    ]).then(([meta, community, votes, block]) => {
+      if (block) setCurrentBlock(block)
       const backendPoll = community?.polls?.find(p => p.poll_id === pollId)
 
       if (!meta && !backendPoll) { setPollLoading(false); return }
@@ -134,6 +137,7 @@ export default function PollDetail() {
         required_credential_type: meta?.required_credential_type || backendPoll?.required_credential_type || community?.credential_type || 1,
         created_at:               meta?.created_at ?? backendPoll?.created_at_block ?? 0,
         active:                   meta?.active ?? true,
+        end_block:                backendPoll?.end_block,
         options,
         poll_type:                backendPoll?.poll_type ?? 'flat',
         operator_address:         backendPoll?.operator_address,
@@ -178,6 +182,7 @@ export default function PollDetail() {
   const hasRanked   = Object.values(ranking).some(r => r > 0)
   const rankedCount = Object.values(ranking).filter(r => r > 0).length
   const isDone      = status === 'done'
+  const isPollClosed = !poll?.active || (poll?.end_block !== undefined && currentBlock > 0 && currentBlock > poll.end_block)
   const layerOptions = poll?.options.filter(o => o.parent_option_id === currentParentId) ?? []
 
   // Step index: 0=Connect, 1=Browse, 2=Rank, 3=Confirm, 4=Done
@@ -285,8 +290,8 @@ export default function PollDetail() {
             </Link>
           </div>
 
-          {/* Tabs (only when connected) */}
-          {connected && (
+          {/* Tabs (only when connected and poll is open) */}
+          {connected && !isPollClosed && (
             <div className="px-6 pb-3">
               <div className="flex gap-1 bg-gray-50 rounded-xl p-1">
                 {(['browse', 'vote'] as const).map(t => (
@@ -298,6 +303,18 @@ export default function PollDetail() {
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Poll closed banner */}
+          {isPollClosed && (
+            <div className="mx-6 mb-3 flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+              <span className="text-gray-400">🔒</span>
+              <p className="text-sm font-medium text-gray-600">This poll has closed. Voting is no longer available.</p>
+              <Link to={`/communities/${communityId}/polls/${pollId}/results`}
+                className="ml-auto text-xs text-[#0070F3] font-medium hover:underline shrink-0">
+                View Results →
+              </Link>
             </div>
           )}
 
@@ -415,7 +432,7 @@ export default function PollDetail() {
           </div>
 
           {/* Bottom action bar */}
-          {tab === 'vote' && connected && !isDone && (
+          {tab === 'vote' && connected && !isDone && !isPollClosed && (
             <div className="shrink-0 bg-white pt-4 pb-8 px-6 border-t border-gray-100 shadow-[0_-8px_24px_-8px_rgba(0,0,0,0.06)]">
               <div className="flex flex-col items-center gap-3">
                 {/* EV / VP% / CV credential strip */}

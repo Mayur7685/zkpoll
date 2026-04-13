@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useCommunityStore } from '../store/communityStore'
+import { getBlockHeight } from '../lib/aleo'
 import CredentialHub from '../components/CredentialHub'
 import PollCard from '../components/PollCard'
 import type { CommunityConfig } from '../types'
@@ -10,10 +11,12 @@ export default function CommunityDetail() {
   const { fetchOne } = useCommunityStore()
   const [community, setCommunity] = useState<CommunityConfig | null>(null)
   const [loading, setLoading] = useState(true)
+  const [currentBlock, setCurrentBlock] = useState(0)
 
   useEffect(() => {
     if (!id) return
     fetchOne(id).then(c => { setCommunity(c); setLoading(false) })
+    getBlockHeight().then(setCurrentBlock).catch(() => null)
   }, [id, fetchOne])
 
   if (loading) return (
@@ -94,36 +97,50 @@ export default function CommunityDetail() {
 
       {/* Polls */}
       <div>
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-[#10B981]" />
-            <h2 className="text-sm font-semibold text-gray-900">Polls</h2>
-            {polls.length > 0 && <span className="text-sm text-gray-400">{polls.length}</span>}
-          </div>
-        </div>
-
-        {polls.length === 0 ? (
-          <div className="bg-white border border-gray-100 rounded-2xl p-8 text-center">
-            <p className="text-sm text-gray-500 mb-4">No polls yet in this community.</p>
-            <Link
-              to={`/create-poll?community=${community.community_id}`}
-              className="inline-flex items-center gap-1.5 bg-gray-900 text-white px-5 py-2.5 rounded-full text-sm font-medium hover:bg-gray-800 transition-colors"
-            >
-              Create first poll →
-            </Link>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4">
-            {polls.map(poll => (
-              <PollCard
-                key={poll.poll_id}
-                communityId={community.community_id}
-                communityName={community.name}
-                poll={poll}
-              />
-            ))}
-          </div>
-        )}
+        {(() => {
+          const activePolls = polls.filter(p => !p.end_block || currentBlock === 0 || currentBlock <= p.end_block)
+          const pastPolls   = polls.filter(p => p.end_block && currentBlock > 0 && currentBlock > p.end_block)
+          return (
+            <>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-[#10B981]" />
+                  <h2 className="text-sm font-semibold text-gray-900">Active Polls</h2>
+                  {activePolls.length > 0 && <span className="text-sm text-gray-400">{activePolls.length}</span>}
+                </div>
+              </div>
+              {activePolls.length === 0 ? (
+                <div className="bg-white border border-gray-100 rounded-2xl p-8 text-center mb-4">
+                  <p className="text-sm text-gray-500 mb-4">No active polls.</p>
+                  <Link to={`/create-poll?community=${community.community_id}`}
+                    className="inline-flex items-center gap-1.5 bg-gray-900 text-white px-5 py-2.5 rounded-full text-sm font-medium hover:bg-gray-800 transition-colors">
+                    Create first poll →
+                  </Link>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4 mb-6">
+                  {activePolls.map(poll => (
+                    <PollCard key={poll.poll_id} communityId={community.community_id} communityName={community.name} poll={poll} />
+                  ))}
+                </div>
+              )}
+              {pastPolls.length > 0 && (
+                <>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-2 h-2 rounded-full bg-gray-300" />
+                    <h2 className="text-sm font-semibold text-gray-500">Past Polls</h2>
+                    <span className="text-sm text-gray-400">{pastPolls.length}</span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 opacity-70">
+                    {pastPolls.map(poll => (
+                      <PollCard key={poll.poll_id} communityId={community.community_id} communityName={community.name} poll={poll} />
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          )
+        })()}
       </div>
     </div>
   )
