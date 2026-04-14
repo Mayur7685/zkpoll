@@ -34,7 +34,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         programs={['zkpoll_v2_core.aleo']}
         autoConnect
       >
-        <WalletModalProvider network={Network.TESTNET}>
+        <WalletModalProvider>
           <ToastProvider>
             <App />
             <OnboardingTutorial />
